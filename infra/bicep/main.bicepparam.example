@@ -1,11 +1,7 @@
-// Example parameters file for main.bicep
-// Copy this file to main.bicepparam and fill in the values
-// DO NOT commit main.bicepparam to source control
-
 using './main.bicep'
 
 param environmentName = 'dev'
 param location = 'eastus'
 param aksNodeCount = 2
 param aksNodeVmSize = 'Standard_B2s'
-param storageAccountName = 'mystorageaccount'
+param storageAccountName = 'youruniquestorename'
