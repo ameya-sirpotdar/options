@@ -1,8 +1,24 @@
+targetScope = 'resourceGroup'
+
+@description('Azure region for the AKS cluster')
 param location string
+
+@description('Name of the AKS cluster')
 param clusterName string
+
+@description('Number of nodes in the default node pool')
 param nodeCount int = 2
+
+@description('VM size for the default node pool')
 param nodeVmSize string = 'Standard_B2s'
+
+@description('Kubernetes version')
 param kubernetesVersion string = '1.29'
+
+@description('DNS prefix for the AKS cluster')
+param dnsPrefix string = clusterName
+
+@description('Tags to apply to the AKS cluster')
 param tags object = {}
 
 resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-02-01' = {
@@ -14,7 +30,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-02-01' = {
   }
   properties: {
     kubernetesVersion: kubernetesVersion
-    dnsPrefix: clusterName
+    dnsPrefix: dnsPrefix
     enableRBAC: true
     agentPoolProfiles: [
       {
@@ -22,30 +38,52 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-02-01' = {
         count: nodeCount
         vmSize: nodeVmSize
         osType: 'Linux'
+        osDiskSizeGB: 30
         mode: 'System'
         enableAutoScaling: false
         type: 'VirtualMachineScaleSets'
-        osDiskSizeGB: 30
-        osDiskType: 'Managed'
-        maxPods: 30
+        availabilityZones: []
+        nodeTaints: []
+        nodeLabels: {
+          'pool-type': 'system'
+        }
       }
     ]
     networkProfile: {
-      networkPlugin: 'kubenet'
+      networkPlugin: 'azure'
+      networkPolicy: 'azure'
       loadBalancerSku: 'standard'
+      outboundType: 'loadBalancer'
+    }
+    addonProfiles: {
+      azurePolicy: {
+        enabled: false
+      }
+      omsAgent: {
+        enabled: false
+      }
     }
     autoUpgradeProfile: {
       upgradeChannel: 'patch'
     }
     disableLocalAccounts: false
-    oidcIssuerProfile: {
-      enabled: false
+    apiServerAccessProfile: {
+      enablePrivateCluster: false
     }
   }
 }
 
+@description('The resource ID of the AKS cluster')
+output clusterResourceId string = aksCluster.id
+
+@description('The name of the AKS cluster')
 output clusterName string = aksCluster.name
-output clusterId string = aksCluster.id
+
+@description('The FQDN of the AKS cluster API server')
 output clusterFqdn string = aksCluster.properties.fqdn
-output kubeletIdentityObjectId string = aksCluster.properties.identityProfile.kubeletidentity.objectId
-output principalId string = aksCluster.identity.principalId
+
+@description('The principal ID of the AKS cluster system-assigned managed identity')
+output clusterPrincipalId string = aksCluster.identity.principalId
+
+@description('The Kubernetes version running on the cluster')
+output kubernetesVersion string = aksCluster.properties.kubernetesVersion
