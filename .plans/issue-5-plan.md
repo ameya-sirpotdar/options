@@ -1,323 +1,454 @@
 # Implementation Plan: Story 1.3 – Provision Azure Cloud Resources
 
+## Tool Choice: Bicep vs Terraform
+
+Before proceeding, here is an honest comparison to inform the decision. Since you have ruled out multi-cloud portability, that removes Terraform's most commonly cited advantage.
+
+### Comparison Table
+
+| Dimension | Bicep | Terraform |
+|---|---|---|
+| **Azure-nativeness** | First-party Microsoft tool; always supports new Azure features on day one | Third-party; new Azure features sometimes lag by weeks or months |
+| **Learning curve** | Simpler syntax; closer to ARM JSON but far more readable | HCL is clean but adds a separate language/ecosystem to learn |
+| **State management** | No state file; Azure Resource Manager is the source of truth | Requires managing a state file (local or remote); common source of operational pain |
+| **Drift detection** | `what-if` shows live drift against ARM; no state to go stale | State file can drift from reality; `terraform refresh` needed |
+| **Tooling & IDE support** | Official VS Code extension with IntelliSense, type checking, linting | Mature ecosystem but third-party |
+| **CI/CD integration** | Native Azure DevOps tasks and GitHub Actions; `az deployment` CLI | Requires installing Terraform binary; more CI setup |
+| **Modularity** | Bicep modules are well-supported and composable | Terraform modules are mature and widely shared on the registry |
+| **Multi-cloud** | Azure only | AWS, GCP, Azure, and many others |
+| **Community/ecosystem** | Smaller but growing; backed by Microsoft | Very large community; abundant examples |
+| **Secrets/sensitive outputs** | No built-in `sensitive` flag on outputs (handled via Key Vault pattern) | `sensitive = true` on outputs suppresses terminal display |
+| **Past pain points you cited** | N/A | State corruption, provider version conflicts, plan/apply drift |
+
+### Recommendation
+
+**Use Bicep.** Given that:
+
+1. You are Azure-only and have no plans to change.
+2. Your past Terraform experience was negative — the most common pain points (state file management, provider version drift, state corruption) are entirely absent from Bicep.
+3. Bicep has no state file to manage; Azure Resource Manager itself tracks what exists.
+4. Bicep is maintained by Microsoft, so AKS and Storage Table support is always current.
+5. The `az deployment` CLI and `what-if` command give you safe, readable previews equivalent to `terraform plan`.
+
+The rest of this plan uses Bicep.
+
+---
+
 ## Approach
 
-Use Terraform (the `/infra/terraform/` directory already exists as a placeholder) to define all Azure infrastructure as code. The plan will create modular, well-structured Terraform configuration files covering:
-- Azure Resource Group
+Use Bicep (the `/infra/` directory already exists as a placeholder) to define all Azure infrastructure as code. The plan will create modular, well-structured Bicep files covering:
+
+- Azure Resource Group (deployed at subscription scope)
 - Azure Kubernetes Service (AKS) with a 2-node `Standard_B2s` node pool
 - Azure Storage Account with three tables: `optionsdata`, `sentimentdata`, `runlogs`
 
-The resource group name will be supplied via the `resource_group_name` input variable, with a default value of `"rg-options-trading-mvp"`. This follows the Azure naming convention `rg-<workload>-<environment>` and is overridable per environment.
+A `main.bicepparam.example` file will be provided so developers can supply their own values without committing secrets. Deployment is performed via the Azure CLI (`az deployment`) — no additional tooling installation required beyond the Azure CLI itself.
 
-A `terraform.tfvars.example` file will be provided so developers can supply their own values without committing secrets. A CI-friendly variable structure will be used throughout.
+---
+
+## Directory Structure
+
+```
+infra/
+  bicep/
+    main.bicep                  # Subscription-scope entry point; creates resource group
+    main.bicepparam.example     # Example parameters file (copy to main.bicepparam)
+    modules/
+      aks.bicep                 # AKS cluster module
+      storage.bicep             # Storage account + tables module
+  README.md                     # Prerequisites, deployment instructions, variable reference
+```
 
 ---
 
 ## Files to Create
 
-### `/infra/terraform/main.tf`
-Root Terraform configuration. Declares the `azurerm` provider and calls child modules (or defines resources directly for simplicity at MVP scale).
+### `/infra/bicep/main.bicep`
+Subscription-scope deployment that creates the resource group and calls child modules for AKS and storage.
 
-### `/infra/terraform/variables.tf`
-Input variable declarations: `resource_group_name`, `location`, `aks_cluster_name`, `storage_account_name`, `node_count`, `node_vm_size`, `environment`, etc.
+### `/infra/bicep/main.bicepparam.example`
+Example Bicep parameters file. Developers copy this to `main.bicepparam` (gitignored) and fill in their values.
 
-The `resource_group_name` variable will be declared as:
-```hcl
-variable "resource_group_name" {
-  description = "Name of the Azure Resource Group. Must be unique within the subscription. Defaults to 'rg-options-trading-mvp'."
-  type        = string
-  default     = "rg-options-trading-mvp"
-}
-```
+### `/infra/bicep/modules/aks.bicep`
+Bicep module defining the `Microsoft.ContainerService/managedClusters` resource.
 
-### `/infra/terraform/outputs.tf`
-Output values: AKS cluster name, kubeconfig, storage account name, storage account connection string (marked sensitive), and resource group name.
-
-### `/infra/terraform/resource_group.tf`
-Defines the `azurerm_resource_group` resource using `var.resource_group_name`.
-
-### `/infra/terraform/aks.tf`
-Defines the `azurerm_kubernetes_cluster` resource with:
-- `default_node_pool` using `Standard_B2s` VM size
-- `node_count = 2`
-- System-assigned managed identity
-
-### `/infra/terraform/storage.tf`
-Defines:
-- `azurerm_storage_account` resource
-- Three `azurerm_storage_table` resources: `optionsdata`, `sentimentdata`, `runlogs`
-
-### `/infra/terraform/terraform.tfvars.example`
-Example variable values file. Developers copy this to `terraform.tfvars` (gitignored) and fill in their values. Includes an explicit example for `resource_group_name`.
-
-### `/infra/terraform/.terraform.lock.hcl` (generated)
-Will be generated on `terraform init` — should be committed to version control per Terraform best practices.
+### `/infra/bicep/modules/storage.bicep`
+Bicep module defining the `Microsoft.Storage/storageAccounts` resource and three table resources.
 
 ### `/infra/README.md`
-Documentation covering prerequisites, how to initialise, plan, and apply the Terraform configuration, how to destroy resources, and a table of all input variables including `resource_group_name`.
+Documentation covering prerequisites, authentication, parameter reference, and the full deployment workflow.
 
-### `/.gitignore` additions (or `/infra/terraform/.gitignore`)
-Ensure `terraform.tfvars`, `*.tfstate`, `*.tfstate.backup`, and `.terraform/` directory are gitignored.
+### `/infra/bicep/.gitignore`
+Ensures `main.bicepparam` and any generated ARM JSON files are not committed.
 
 ---
 
 ## Files to Modify
 
-### `/infra/terraform/.gitkeep`
-Remove this placeholder file once real Terraform files are added.
-
-### `/infra/.gitkeep`
-Remove this placeholder file once `infra/README.md` is added.
+### `/infra/terraform/.gitkeep` and `/infra/.gitkeep`
+Remove these placeholder files once real Bicep files are added.
 
 ### `tests/test_project_structure.py`
-Add assertions to verify that the expected Terraform files exist under `/infra/terraform/`.
+Add assertions to verify that the expected Bicep files exist under `/infra/bicep/`.
+
+### `/.gitignore`
+Add Bicep-specific ignores.
 
 ---
 
 ## Implementation Steps
 
-1. **Remove placeholder files** — Delete `/infra/.gitkeep` and `/infra/terraform/.gitkeep` as they will be replaced by real content.
-
-2. **Create `variables.tf`** — Define all input variables with sensible defaults where appropriate:
-   ```hcl
-   variable "resource_group_name" {
-     description = "Name of the Azure Resource Group. Must be unique within the subscription."
-     type        = string
-     default     = "rg-options-trading-mvp"
-   }
-
-   variable "location" {
-     description = "Azure region in which to deploy all resources."
-     type        = string
-     default     = "eastus"
-   }
-
-   variable "aks_cluster_name" {
-     description = "Name of the AKS cluster."
-     type        = string
-     default     = "aks-options-trading-mvp"
-   }
-
-   variable "storage_account_name" {
-     description = "Globally unique storage account name (3–24 lowercase alphanumeric characters)."
-     type        = string
-   }
-
-   variable "node_count" {
-     description = "Number of nodes in the AKS default node pool."
-     type        = number
-     default     = 2
-   }
-
-   variable "node_vm_size" {
-     description = "VM size for AKS nodes."
-     type        = string
-     default     = "Standard_B2s"
-   }
-
-   variable "environment" {
-     description = "Deployment environment label (e.g. dev, staging, prod)."
-     type        = string
-     default     = "dev"
-   }
-   ```
-
-3. **Create `resource_group.tf`** — Define `azurerm_resource_group` using the `resource_group_name` and `location` variables:
-   ```hcl
-   resource "azurerm_resource_group" "main" {
-     name     = var.resource_group_name
-     location = var.location
-
-     tags = {
-       environment = var.environment
-     }
-   }
-   ```
-
-4. **Create `aks.tf`** — Define `azurerm_kubernetes_cluster`:
-   ```hcl
-   resource "azurerm_kubernetes_cluster" "main" {
-     name                = var.aks_cluster_name
-     location            = azurerm_resource_group.main.location
-     resource_group_name = azurerm_resource_group.main.name
-     dns_prefix          = var.aks_cluster_name
-
-     default_node_pool {
-       name       = "default"
-       node_count = var.node_count
-       vm_size    = var.node_vm_size
-     }
-
-     identity {
-       type = "SystemAssigned"
-     }
-
-     tags = {
-       environment = var.environment
-     }
-   }
-   ```
-
-5. **Create `storage.tf`** — Define storage account and three tables:
-   ```hcl
-   resource "azurerm_storage_account" "main" {
-     name                     = var.storage_account_name
-     resource_group_name      = azurerm_resource_group.main.name
-     location                 = azurerm_resource_group.main.location
-     account_tier             = "Standard"
-     account_replication_type = "LRS"
-
-     tags = {
-       environment = var.environment
-     }
-   }
-
-   resource "azurerm_storage_table" "optionsdata" {
-     name                 = "optionsdata"
-     storage_account_name = azurerm_storage_account.main.name
-   }
-
-   resource "azurerm_storage_table" "sentimentdata" {
-     name                 = "sentimentdata"
-     storage_account_name = azurerm_storage_account.main.name
-   }
-
-   resource "azurerm_storage_table" "runlogs" {
-     name                 = "runlogs"
-     storage_account_name = azurerm_storage_account.main.name
-   }
-   ```
-
-6. **Create `main.tf`** — Declare the `azurerm` provider with version constraints:
-   ```hcl
-   terraform {
-     required_version = ">= 1.3.0"
-     required_providers {
-       azurerm = {
-         source  = "hashicorp/azurerm"
-         version = "~> 3.0"
-       }
-     }
-
-     # TODO: Configure a remote backend for non-local environments, e.g.:
-     # backend "azurerm" {
-     #   resource_group_name  = "rg-tfstate"
-     #   storage_account_name = "<tfstate-storage-account>"
-     #   container_name       = "tfstate"
-     #   key                  = "options-trading.tfstate"
-     # }
-   }
-
-   provider "azurerm" {
-     features {}
-   }
-   ```
-
-7. **Create `outputs.tf`** — Expose useful outputs including the resource group name:
-   ```hcl
-   output "resource_group_name" {
-     description = "Name of the provisioned Azure Resource Group."
-     value       = azurerm_resource_group.main.name
-   }
-
-   output "aks_cluster_name" {
-     description = "Name of the provisioned AKS cluster."
-     value       = azurerm_kubernetes_cluster.main.name
-   }
-
-   output "kubeconfig" {
-     description = "Raw kubeconfig for the AKS cluster."
-     value       = azurerm_kubernetes_cluster.main.kube_config_raw
-     sensitive   = true
-   }
-
-   output "storage_account_name" {
-     description = "Name of the provisioned Storage Account."
-     value       = azurerm_storage_account.main.name
-   }
-
-   output "storage_account_connection_string" {
-     description = "Primary connection string for the Storage Account."
-     value       = azurerm_storage_account.main.primary_connection_string
-     sensitive   = true
-   }
-   ```
-
-8. **Create `terraform.tfvars.example`** — Provide a template with placeholder values and comments:
-   ```hcl
-   # Copy this file to terraform.tfvars and fill in your values.
-   # terraform.tfvars is gitignored and must never be committed.
-
-   # Name of the Azure Resource Group (default: "rg-options-trading-mvp")
-   resource_group_name = "rg-options-trading-mvp"
-
-   # Azure region (default: "eastus")
-   location = "eastus"
-
-   # AKS cluster name (default: "aks-options-trading-mvp")
-   aks_cluster_name = "aks-options-trading-mvp"
-
-   # Storage account name — must be globally unique, 3–24 lowercase alphanumeric chars
-   storage_account_name = "stoptionsmvp<unique-suffix>"
-
-   # Number of AKS nodes (default: 2)
-   node_count = 2
-
-   # AKS node VM size (default: "Standard_B2s")
-   node_vm_size = "Standard_B2s"
-
-   # Environment label (default: "dev")
-   environment = "dev"
-   ```
-
-9. **Create `/infra/README.md`** — Document prerequisites, authentication, variable reference (including `resource_group_name`), and the `terraform init / plan / apply / destroy` workflow. Include a variables table:
-
-   | Variable | Description | Default |
-   |---|---|---|
-   | `resource_group_name` | Name of the Azure Resource Group | `rg-options-trading-mvp` |
-   | `location` | Azure region | `eastus` |
-   | `aks_cluster_name` | AKS cluster name | `aks-options-trading-mvp` |
-   | `storage_account_name` | Globally unique storage account name | *(required)* |
-   | `node_count` | AKS node count | `2` |
-   | `node_vm_size` | AKS node VM size | `Standard_B2s` |
-   | `environment` | Environment label | `dev` |
-
-10. **Update `.gitignore`** — Ensure sensitive and generated Terraform files are excluded:
-    ```
-    # Terraform
-    infra/terraform/terraform.tfvars
-    infra/terraform/*.tfstate
-    infra/terraform/*.tfstate.backup
-    infra/terraform/.terraform/
-    ```
-
-11. **Update `tests/test_project_structure.py`** — Add checks for the presence of key Terraform files and the README.
+### Step 1 — Remove placeholder files
+Delete `/infra/.gitkeep` and `/infra/terraform/.gitkeep`. The `/infra/terraform/` directory can be removed entirely since Bicep replaces it, or kept empty with a note if the directory is referenced elsewhere.
 
 ---
 
-## Test Strategy
+### Step 2 — Create `/infra/bicep/modules/aks.bicep`
 
-### Structural Tests (automated, no Azure credentials needed)
-- Extend `tests/test_project_structure.py` to assert that `infra/terraform/main.tf`, `variables.tf`, `outputs.tf`, `aks.tf`, `storage.tf`, and `resource_group.tf` all exist.
-- Assert that `infra/README.md` exists.
-- Assert that `terraform.tfvars` is NOT committed (gitignore check).
+```bicep
+@description('Azure region for the AKS cluster.')
+param location string
 
-### Terraform Validation (CI-safe, no Azure credentials needed)
-- Run `terraform fmt -check` to enforce formatting.
-- Run `terraform validate` after `terraform init -backend=false` to catch syntax and schema errors without requiring real credentials.
+@description('Name of the AKS cluster.')
+param aksClusterName string
 
-### Manual / Integration Tests (requires Azure subscription)
-- Run `terraform plan` against a real Azure subscription and verify the plan shows creation of: 1 resource group named `rg-options-trading-mvp` (or the configured override), 1 AKS cluster, 1 storage account, 3 storage tables.
-- Run `terraform apply` and verify resources exist in the Azure portal, including the resource group `rg-options-trading-mvp`.
-- Run `terraform destroy` to clean up after validation.
+@description('Name of the resource group (used for tagging reference only).')
+param environment string
+
+@description('Number of nodes in the default node pool.')
+param nodeCount int = 2
+
+@description('VM size for AKS nodes.')
+param nodeVmSize string = 'Standard_B2s'
+
+resource aksCluster 'Microsoft.ContainerService/managedClusters@2023-05-01' = {
+  name: aksClusterName
+  location: location
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    dnsPrefix: aksClusterName
+    agentPoolProfiles: [
+      {
+        name: 'default'
+        count: nodeCount
+        vmSize: nodeVmSize
+        mode: 'System'
+      }
+    ]
+  }
+  tags: {
+    environment: environment
+  }
+}
+
+@description('Name of the provisioned AKS cluster.')
+output aksClusterName string = aksCluster.name
+
+@description('Principal ID of the AKS system-assigned managed identity.')
+output aksPrincipalId string = aksCluster.identity.principalId
+```
 
 ---
 
-## Edge Cases to Handle
+### Step 3 — Create `/infra/bicep/modules/storage.bicep`
 
-- **Resource group name uniqueness**: The default `rg-options-trading-mvp` is descriptive and follows Azure naming conventions. If deploying multiple environments to the same subscription, override `resource_group_name` (e.g. `rg-options-trading-staging`) via `terraform.tfvars` or CI environment variables.
-- **Storage account name uniqueness**: Azure storage account names must be globally unique and 3–24 lowercase alphanumeric characters. Document this constraint and use a variable with a note. No default is provided to force an explicit, unique value.
-- **AKS node pool quota**: `Standard_B2s` requires available vCPU quota in the target region. Document this as a prerequisite.
-- **Terraform state**: For MVP, local state is acceptable, but a commented-out remote backend block is included in `main.tf` as a placeholder for future use with Azure Blob Storage.
-- **Azure provider authentication**: Document that `az login` or service principal environment variables (`ARM_CLIENT_ID`, `ARM_CLIENT_SECRET`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`) must be set before running Terraform.
-- **Region availability**: Not all VM sizes are available in all regions. Default to `eastus` which has broad availability.
+```bicep
+@description('Azure region for the storage account.')
+param location string
+
+@description('Globally unique storage account name (3–24 lowercase alphanumeric characters).')
+@minLength(3)
+@maxLength(24)
+param storageAccountName string
+
+@description('Environment label for tagging.')
+param environment string
+
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
+  name: storageAccountName
+  location: location
+  sku: {
+    name: 'Standard_LRS'
+  }
+  kind: 'StorageV2'
+  tags: {
+    environment: environment
+  }
+}
+
+resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-01-01' = {
+  parent: storageAccount
+  name: 'default'
+}
+
+resource optionsDataTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'optionsdata'
+}
+
+resource sentimentDataTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'sentimentdata'
+}
+
+resource runLogsTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-01-01' = {
+  parent: tableService
+  name: 'runlogs'
+}
+
+@description('Name of the provisioned storage account.')
+output storageAccountName string = storageAccount.name
+
+@description('Primary table storage endpoint.')
+output primaryTableEndpoint string = storageAccount.properties.primaryEndpoints.table
+```
+
+---
+
+### Step 4 — Create `/infra/bicep/main.bicep`
+
+This file is deployed at **subscription scope** so it can create the resource group itself, eliminating the need to pre-create it manually.
+
+```bicep
+targetScope = 'subscription'
+
+@description('Name of the Azure Resource Group. Defaults to rg-options-trading-mvp.')
+param resourceGroupName string = 'rg-options-trading-mvp'
+
+@description('Azure region in which to deploy all resources.')
+param location string = 'eastus'
+
+@description('Name of the AKS cluster.')
+param aksClusterName string = 'aks-options-trading-mvp'
+
+@description('Globally unique storage account name (3–24 lowercase alphanumeric characters).')
+@minLength(3)
+@maxLength(24)
+param storageAccountName string
+
+@description('Number of nodes in the AKS default node pool.')
+param nodeCount int = 2
+
+@description('VM size for AKS nodes.')
+param nodeVmSize string = 'Standard_B2s'
+
+@description('Deployment environment label (e.g. dev, staging, prod).')
+param environment string = 'dev'
+
+// Create the resource group at subscription scope
+resource resourceGroup 'Microsoft.Resources/resourceGroups@2023-07-01' = {
+  name: resourceGroupName
+  location: location
+  tags: {
+    environment: environment
+  }
+}
+
+// Deploy AKS cluster into the resource group
+module aks 'modules/aks.bicep' = {
+  name: 'aksDeployment'
+  scope: resourceGroup
+  params: {
+    location: location
+    aksClusterName: aksClusterName
+    environment: environment
+    nodeCount: nodeCount
+    nodeVmSize: nodeVmSize
+  }
+}
+
+// Deploy storage account and tables into the resource group
+module storage 'modules/storage.bicep' = {
+  name: 'storageDeployment'
+  scope: resourceGroup
+  params: {
+    location: location
+    storageAccountName: storageAccountName
+    environment: environment
+  }
+}
+
+@description('Name of the provisioned resource group.')
+output resourceGroupName string = resourceGroup.name
+
+@description('Name of the provisioned AKS cluster.')
+output aksClusterName string = aks.outputs.aksClusterName
+
+@description('Principal ID of the AKS managed identity.')
+output aksPrincipalId string = aks.outputs.aksPrincipalId
+
+@description('Name of the provisioned storage account.')
+output storageAccountName string = storage.outputs.storageAccountName
+
+@description('Primary table storage endpoint.')
+output primaryTableEndpoint string = storage.outputs.primaryTableEndpoint
+```
+
+---
+
+### Step 5 — Create `/infra/bicep/main.bicepparam.example`
+
+```bicep
+using './main.bicep'
+
+// Copy this file to main.bicepparam and fill in your values.
+// main.bicepparam is gitignored and must never be committed.
+
+// Name of the Azure Resource Group (default: 'rg-options-trading-mvp')
+param resourceGroupName = 'rg-options-trading-mvp'
+
+// Azure region (default: 'eastus')
+param location = 'eastus'
+
+// AKS cluster name (default: 'aks-options-trading-mvp')
+param aksClusterName = 'aks-options-trading-mvp'
+
+// Storage account name — must be globally unique, 3–24 lowercase alphanumeric chars
+// Replace <unique-suffix> with something unique to your subscription, e.g. your initials + random digits
+param storageAccountName = 'stoptionsmvp<unique-suffix>'
+
+// Number of AKS nodes (default: 2)
+param nodeCount = 2
+
+// AKS node VM size (default: 'Standard_B2s')
+param nodeVmSize = 'Standard_B2s'
+
+// Environment label (default: 'dev')
+param environment = 'dev'
+```
+
+---
+
+### Step 6 — Create `/infra/bicep/.gitignore`
+
+```gitignore
+# Local parameters file — may contain sensitive values, never commit
+main.bicepparam
+
+# Compiled ARM JSON output (if using bicep build locally)
+*.json
+!.bicep/*.example.json
+```
+
+---
+
+### Step 7 — Update root `/.gitignore`
+
+Add the following section:
+
+```gitignore
+# Bicep
+infra/bicep/main.bicepparam
+infra/bicep/*.json
+```
+
+---
+
+### Step 8 — Create `/infra/README.md`
+
+````markdown
+# Infrastructure – Azure Provisioning (Bicep)
+
+All Azure resources for this project are defined as Bicep templates under `infra/bicep/`.
+
+## Prerequisites
+
+- [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) >= 2.50.0 (includes Bicep support built-in)
+- An Azure subscription with sufficient quota:
+  - At least 4 vCPUs available for `Standard_B2s` in your target region
+  - Permissions to create resource groups, AKS clusters, and storage accounts
+- Contributor role (or equivalent) on the target subscription
+
+## Authentication
+
+```bash
+az login
+az account set --subscription "<your-subscription-id>"
+```
+
+For CI/CD pipelines, use a service principal:
+
+```bash
+export AZURE_CLIENT_ID="<client-id>"
+export AZURE_CLIENT_SECRET="<client-secret>"
+export AZURE_TENANT_ID="<tenant-id>"
+export AZURE_SUBSCRIPTION_ID="<subscription-id>"
+
+az login --service-principal \
+  --username "$AZURE_CLIENT_ID" \
+  --password "$AZURE_CLIENT_SECRET" \
+  --tenant "$AZURE_TENANT_ID"
+```
+
+## Setup
+
+Copy the example parameters file and fill in your values:
+
+```bash
+cp infra/bicep/main.bicepparam.example infra/bicep/main.bicepparam
+# Edit main.bicepparam — set storageAccountName to a globally unique value
+```
+
+`main.bicepparam` is gitignored and must never be committed.
+
+## Preview Changes (equivalent to terraform plan)
+
+```bash
+az deployment sub what-if \
+  --location eastus \
+  --template-file infra/bicep/main.bicep \
+  --parameters infra/bicep/main.bicepparam
+```
+
+The `what-if` command shows exactly what will be created, modified, or deleted — no changes are applied.
+
+## Deploy
+
+```bash
+az deployment sub create \
+  --location eastus \
+  --template-file infra/bicep/main.bicep \
+  --parameters infra/bicep/main.bicepparam \
+  --name "options-trading-mvp-$(date +%Y%m%d%H%M%S)"
+```
+
+## Destroy / Clean Up
+
+Bicep does not have a built-in destroy command. Delete the resource group to remove all provisioned resources:
+
+```bash
+az group delete --name rg-options-trading-mvp --yes --no-wait
+```
+
+Replace `rg-options-trading-mvp` with your configured `resourceGroupName` if you used a different value.
+
+## Input Parameters
+
+| Parameter | Description | Default |
+|---|---|---|
+| `resourceGroupName` | Name of the Azure Resource Group | `rg-options-trading-mvp` |
+| `location` | Azure region | `eastus` |
+| `aksClusterName` | AKS cluster name | `aks-options-trading-mvp` |
+| `storageAccountName` | Globally unique storage account name | *(required)* |
+| `nodeCount` | AKS node count | `2` |
+| `nodeVmSize` | AKS node VM size | `Standard_B2s` |
+| `environment` | Environment label | `dev` |
+
+## Outputs
+
+| Output | Description |
+|---|---|
+| `resourceGroupName` | Name of the provisioned resource group |
+| `aksClusterName` | Name of the provisioned AKS cluster |
+| `aksPrincipalId` | Managed identity principal ID of the AKS cluster |
+| `storageAccountName` | Name of the provisioned storage account |
+| `primaryTableEndpoint` | Primary Azure Table Storage endpoint URL |
+
+## Retrieve AKS Credentials
+
+After deployment, fetch the kubeconfig:
+
+```bash
+az aks get-credentials \
