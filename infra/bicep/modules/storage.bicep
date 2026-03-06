@@ -13,8 +13,13 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   properties: {
     accessTier: 'Hot'
     allowBlobPublicAccess: false
+    allowSharedKeyAccess: true
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
+    networkAcls: {
+      bypass: 'AzureServices'
+      defaultAction: 'Allow'
+    }
   }
 }
 
@@ -41,3 +46,4 @@ resource runLogsTable 'Microsoft.Storage/storageAccounts/tableServices/tables@20
 output storageAccountId string = storageAccount.id
 output storageAccountName string = storageAccount.name
 output primaryEndpoints object = storageAccount.properties.primaryEndpoints
+output tableServiceEndpoint string = storageAccount.properties.primaryEndpoints.table
