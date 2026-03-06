@@ -1,4 +1,11 @@
-location = 'eastus'
-environmentName = 'dev'
-aksNodeCount = 2
-aksNodeVmSize = 'Standard_B2s'
+// Example parameter file for main.bicep
+// Copy this file to main.bicepparam and fill in your values.
+// WARNING: main.bicepparam is git-ignored. Never commit real parameter files.
+
+using './main.bicep'
+
+param environmentName = 'dev'
+param location = 'eastus'
+param aksNodeCount = 2
+param aksNodeVmSize = 'Standard_B2s'
+param storageAccountName = 'mystorageaccount'
