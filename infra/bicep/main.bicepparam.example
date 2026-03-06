@@ -4,4 +4,4 @@ param environmentName = 'dev'
 param location = 'eastus'
 param aksNodeCount = 2
 param aksNodeVmSize = 'Standard_B2s'
-param storageAccountName = 'mystorageaccount'
+param storageAccountName = 'optionsinteldev001'
