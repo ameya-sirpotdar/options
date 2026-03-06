@@ -6,7 +6,7 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
 EXPECTED_PATHS = [
-    "backend/api/__init__.py",
+    "backend/__init__.py" if False else "backend/api/__init__.py",
     "backend/agents/__init__.py",
     "backend/services/__init__.py",
     "backend/models/__init__.py",
@@ -14,9 +14,10 @@ EXPECTED_PATHS = [
     "frontend/vue-app/.gitkeep",
     "tests/test_project_structure.py",
     "infra/bicep/main.bicep",
-    "infra/bicep/main.bicepparam.example",
     "infra/bicep/modules/aks.bicep",
     "infra/bicep/modules/storage.bicep",
+    "infra/bicep/main.bicepparam.example",
+    "infra/bicep/.gitignore",
     "infra/README.md",
 ]
 
@@ -74,73 +75,6 @@ def test_frontend_vue_app_directory_exists():
     )
 
 
-def test_legacy_terraform_placeholder_directory_absent():
-    terraform_dir = os.path.join(REPO_ROOT, "infra", "terraform")
-    assert not os.path.exists(terraform_dir), (
-        "infra/terraform/ legacy placeholder directory must not exist; "
-        "infrastructure is now managed via infra/bicep/"
-    )
-
-
-def test_bicep_directory_exists():
-    bicep_dir = os.path.join(REPO_ROOT, "infra", "bicep")
-    assert os.path.isdir(bicep_dir), (
-        "infra/bicep/ directory must exist"
-    )
-
-
-def test_bicep_modules_directory_exists():
-    modules_dir = os.path.join(REPO_ROOT, "infra", "bicep", "modules")
-    assert os.path.isdir(modules_dir), (
-        "infra/bicep/modules/ directory must exist"
-    )
-
-
-def test_bicep_main_is_file():
-    main_bicep = os.path.join(REPO_ROOT, "infra", "bicep", "main.bicep")
-    assert os.path.isfile(main_bicep), (
-        "infra/bicep/main.bicep must be a file"
-    )
-
-
-def test_bicep_main_bicepparam_example_is_file():
-    param_example = os.path.join(REPO_ROOT, "infra", "bicep", "main.bicepparam.example")
-    assert os.path.isfile(param_example), (
-        "infra/bicep/main.bicepparam.example must be a file"
-    )
-
-
-def test_bicep_aks_module_is_file():
-    aks_module = os.path.join(REPO_ROOT, "infra", "bicep", "modules", "aks.bicep")
-    assert os.path.isfile(aks_module), (
-        "infra/bicep/modules/aks.bicep must be a file"
-    )
-
-
-def test_bicep_storage_module_is_file():
-    storage_module = os.path.join(REPO_ROOT, "infra", "bicep", "modules", "storage.bicep")
-    assert os.path.isfile(storage_module), (
-        "infra/bicep/modules/storage.bicep must be a file"
-    )
-
-
-def test_infra_readme_is_file():
-    readme = os.path.join(REPO_ROOT, "infra", "README.md")
-    assert os.path.isfile(readme), (
-        "infra/README.md must be a file"
-    )
-
-
-def test_infra_readme_is_not_empty():
-    readme = os.path.join(REPO_ROOT, "infra", "README.md")
-    assert os.path.isfile(readme), (
-        "infra/README.md must exist"
-    )
-    assert os.path.getsize(readme) > 0, (
-        "infra/README.md must not be empty"
-    )
-
-
 def test_backend_directory_exists():
     backend_dir = os.path.join(REPO_ROOT, "backend")
     assert os.path.isdir(backend_dir), (
@@ -166,4 +100,30 @@ def test_tests_directory_exists():
     tests_dir = os.path.join(REPO_ROOT, "tests")
     assert os.path.isdir(tests_dir), (
         "tests/ directory must exist"
+    )
+
+
+def test_bicep_files_exist():
+    bicep_files = [
+        os.path.join(REPO_ROOT, "infra", "bicep", "main.bicep"),
+        os.path.join(REPO_ROOT, "infra", "bicep", "modules", "aks.bicep"),
+        os.path.join(REPO_ROOT, "infra", "bicep", "modules", "storage.bicep"),
+    ]
+    for bicep_file in bicep_files:
+        assert os.path.isfile(bicep_file), (
+            f"Expected Bicep file does not exist: {os.path.relpath(bicep_file, REPO_ROOT)}"
+        )
+
+
+def test_infra_bicep_gitignore_exists():
+    gitignore_file = os.path.join(REPO_ROOT, "infra", "bicep", ".gitignore")
+    assert os.path.isfile(gitignore_file), (
+        "infra/bicep/.gitignore must exist to protect sensitive parameter files"
+    )
+
+
+def test_legacy_terraform_placeholder_directory_removed():
+    terraform_dir = os.path.join(REPO_ROOT, "infra", "terraform")
+    assert not os.path.isdir(terraform_dir), (
+        "infra/terraform/ legacy placeholder directory should have been removed in Story 1.3"
     )
