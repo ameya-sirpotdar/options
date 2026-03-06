@@ -3,7 +3,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.pyo
-*.pyd
 .Python
 env/
 venv/
@@ -11,70 +10,69 @@ venv/
 ENV/
 pip-log.txt
 pip-delete-this-directory.txt
-.eggs/
-*.egg-info/
-*.egg
-dist/
-build/
-wheels/
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
 .tox/
+.coverage
+.coverage.*
+.cache
 nosetests.xml
 coverage.xml
 *.cover
+.hypothesis/
+.pytest_cache/
 
-# IDEs and editors
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+
+# OS
 .DS_Store
 Thumbs.db
 
-# Environment variables
-.env
-.env.*
-!.env.example
-
 # Jupyter Notebooks
-.ipynb_checkpoints/
-*.ipynb
+.ipynb_checkpoints
 
 # Logs
 *.log
 logs/
 
-# Bicep / Azure IaC
-*.bicepparam
-!*.bicepparam.example
-infra/bicep/.bicep/
-.azure/
-
-# Terraform (legacy placeholder – should not exist)
-infra/terraform/
-
-# Azure CLI artifacts
-azuredeploy.parameters.json
-azuredeploy.json
-
 # Secrets and credentials
 *.pem
 *.key
-*.pfx
 *.p12
+*.pfx
 secrets/
 credentials/
 
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+# Bicep / Azure
+infra/bicep/*.bicepparam
+!infra/bicep/*.bicepparam.example
+infra/bicep/.bicep/
+.azure/
+
+# Terraform (legacy)
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+.terraform.lock.hcl
+
+# Environment variables
+.env
+.env.*
+!.env.example
