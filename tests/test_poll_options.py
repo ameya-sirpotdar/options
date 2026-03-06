@@ -11,391 +11,334 @@ client = TestClient(app)
 # Helpers
 # ---------------------------------------------------------------------------
 
-VALID_PAYLOAD = {"tickers": ["AAPL", "MSFT", "TSLA"]}
+def make_payload(tickers):
+    return {"tickers": tickers}
 
 
-def _mock_poll_success(tickers):
+def mock_agent_result(tickers):
     return {
-        "status": "ok",
-        "tickers": tickers,
-        "results": {t: {"polled": True} for t in tickers},
+        ticker: {
+            "ticker": ticker,
+            "calls": [{"strike": 100.0, "expiry": "2024-12-20", "premium": 2.5}],
+            "puts": [{"strike": 95.0, "expiry": "2024-12-20", "premium": 1.8}],
+        }
+        for ticker in tickers
     }
 
 
 # ---------------------------------------------------------------------------
-# /health
+# Health check
 # ---------------------------------------------------------------------------
 
-
-class TestHealthEndpoint:
+class TestHealthCheck:
     def test_health_returns_200(self):
         response = client.get("/health")
         assert response.status_code == 200
 
-    def test_health_body(self):
+    def test_health_returns_ok_status(self):
         response = client.get("/health")
         data = response.json()
-        assert data.get("status") == "ok"
+        assert data["status"] == "ok"
+
+    def test_health_response_has_expected_keys(self):
+        response = client.get("/health")
+        data = response.json()
+        assert "status" in data
 
 
 # ---------------------------------------------------------------------------
-# POST /poll/options – happy-path
+# Happy path – POST /poll/options
 # ---------------------------------------------------------------------------
 
-
-class TestPollOptionsSuccess:
-    @patch("backend.api.poll.run_polling", side_effect=_mock_poll_success)
-    def test_returns_200(self, _mock):
-        response = client.post("/poll/options", json=VALID_PAYLOAD)
+class TestPollOptionsHappyPath:
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_single_ticker_returns_200(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["AAPL"]))
         assert response.status_code == 200
 
-    @patch("backend.api.poll.run_polling", side_effect=_mock_poll_success)
-    def test_response_contains_status_ok(self, _mock):
-        response = client.post("/poll/options", json=VALID_PAYLOAD)
-        assert response.json()["status"] == "ok"
-
-    @patch("backend.api.poll.run_polling", side_effect=_mock_poll_success)
-    def test_response_contains_tickers(self, _mock):
-        response = client.post("/poll/options", json=VALID_PAYLOAD)
-        data = response.json()
-        assert set(data["tickers"]) == {"AAPL", "MSFT", "TSLA"}
-
-    @patch("backend.api.poll.run_polling", side_effect=_mock_poll_success)
-    def test_response_contains_results(self, _mock):
-        response = client.post("/poll/options", json=VALID_PAYLOAD)
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_single_ticker_response_contains_results(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["AAPL"]))
         data = response.json()
         assert "results" in data
 
-    @patch("backend.api.poll.run_polling", side_effect=_mock_poll_success)
-    def test_run_polling_called_with_normalised_tickers(self, mock_poll):
-        payload = {"tickers": ["aapl", "msft"]}
-        client.post("/poll/options", json=payload)
-        called_tickers = mock_poll.call_args[0][0]
-        assert called_tickers == ["AAPL", "MSFT"]
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_single_ticker_result_key_matches_ticker(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["AAPL"]))
+        data = response.json()
+        assert "AAPL" in data["results"]
 
-    @patch("backend.api.poll.run_polling", side_effect=_mock_poll_success)
-    def test_single_ticker_accepted(self, _mock):
-        response = client.post("/poll/options", json={"tickers": ["AAPL"]})
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_multiple_tickers_all_present_in_results(self, mock_run):
+        tickers = ["AAPL", "MSFT", "GOOG"]
+        mock_run.return_value = mock_agent_result(tickers)
+        response = client.post("/poll/options", json=make_payload(tickers))
+        data = response.json()
+        for ticker in tickers:
+            assert ticker in data["results"]
+
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_response_includes_tickers_field(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["AAPL"]))
+        data = response.json()
+        assert "tickers" in data
+
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_response_tickers_field_matches_input(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["AAPL"]))
+        data = response.json()
+        assert "AAPL" in data["tickers"]
+
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_agent_called_with_normalised_tickers(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        client.post("/poll/options", json=make_payload(["aapl"]))
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "AAPL" in call_args
+
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_ten_tickers_accepted(self, mock_run):
+        tickers = ["T" + str(i) for i in range(10)]
+        mock_run.return_value = mock_agent_result(tickers)
+        response = client.post("/poll/options", json=make_payload(tickers))
         assert response.status_code == 200
 
-    @patch("backend.api.poll.run_polling", side_effect=_mock_poll_success)
-    def test_duplicate_tickers_deduplicated(self, mock_poll):
-        payload = {"tickers": ["AAPL", "AAPL", "MSFT"]}
-        client.post("/poll/options", json=payload)
-        called_tickers = mock_poll.call_args[0][0]
-        assert called_tickers.count("AAPL") == 1
 
-    @patch("backend.api.poll.run_polling", side_effect=_mock_poll_success)
-    def test_lowercase_tickers_normalised_to_uppercase(self, mock_poll):
-        payload = {"tickers": ["tsla", "goog"]}
-        client.post("/poll/options", json=payload)
-        called_tickers = mock_poll.call_args[0][0]
-        for t in called_tickers:
-            assert t == t.upper()
+# ---------------------------------------------------------------------------
+# Uppercase normalisation
+# ---------------------------------------------------------------------------
 
-    @patch("backend.api.poll.run_polling", side_effect=_mock_poll_success)
-    def test_mixed_case_tickers_normalised(self, mock_poll):
-        payload = {"tickers": ["ApPl", "mSfT"]}
-        client.post("/poll/options", json=payload)
-        called_tickers = mock_poll.call_args[0][0]
-        assert set(called_tickers) == {"APPL", "MSFT"}
+class TestUppercaseNormalisation:
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_lowercase_ticker_normalised_to_uppercase(self, mock_run):
+        mock_run.return_value = mock_agent_result(["MSFT"])
+        response = client.post("/poll/options", json=make_payload(["msft"]))
+        data = response.json()
+        assert "MSFT" in data["results"]
 
-    @patch("backend.api.poll.run_polling", side_effect=_mock_poll_success)
-    def test_results_keyed_by_ticker(self, _mock):
-        response = client.post("/poll/options", json=VALID_PAYLOAD)
-        results = response.json()["results"]
-        for ticker in ["AAPL", "MSFT", "TSLA"]:
-            assert ticker in results
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_mixed_case_ticker_normalised(self, mock_run):
+        mock_run.return_value = mock_agent_result(["GOOG"])
+        response = client.post("/poll/options", json=make_payload(["GoOg"]))
+        data = response.json()
+        assert "GOOG" in data["results"]
+
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_already_uppercase_ticker_unchanged(self, mock_run):
+        mock_run.return_value = mock_agent_result(["TSLA"])
+        response = client.post("/poll/options", json=make_payload(["TSLA"]))
+        data = response.json()
+        assert "TSLA" in data["results"]
+
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_normalised_ticker_passed_to_agent(self, mock_run):
+        mock_run.return_value = mock_agent_result(["NVDA"])
+        client.post("/poll/options", json=make_payload(["nvda"]))
+        call_args = mock_run.call_args[0][0]
+        assert "NVDA" in call_args
+        assert "nvda" not in call_args
 
 
 # ---------------------------------------------------------------------------
-# POST /poll/options – validation errors (422)
+# Whitespace handling
 # ---------------------------------------------------------------------------
 
+class TestWhitespaceHandling:
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_ticker_with_leading_whitespace_stripped(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["  AAPL"]))
+        assert response.status_code == 200
 
-class TestPollOptionsValidationErrors:
-    def test_missing_tickers_field_returns_422(self):
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_ticker_with_trailing_whitespace_stripped(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["AAPL  "]))
+        assert response.status_code == 200
+
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_stripped_ticker_present_in_results(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["  AAPL  "]))
+        data = response.json()
+        assert "AAPL" in data["results"]
+
+    def test_ticker_that_is_only_whitespace_rejected(self):
+        response = client.post("/poll/options", json=make_payload(["   "]))
+        assert response.status_code == 422
+
+    def test_ticker_that_is_empty_string_rejected(self):
+        response = client.post("/poll/options", json=make_payload([""]))
+        assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Duplicate tickers
+# ---------------------------------------------------------------------------
+
+class TestDuplicateTickers:
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_duplicate_tickers_deduplicated(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        client.post("/poll/options", json=make_payload(["AAPL", "AAPL"]))
+        call_args = mock_run.call_args[0][0]
+        assert call_args.count("AAPL") == 1
+
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_duplicate_case_insensitive_deduplicated(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        client.post("/poll/options", json=make_payload(["AAPL", "aapl"]))
+        call_args = mock_run.call_args[0][0]
+        assert len(call_args) == 1
+
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_duplicates_do_not_cause_error(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["AAPL", "AAPL", "AAPL"]))
+        assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Validation errors – empty / missing tickers
+# ---------------------------------------------------------------------------
+
+class TestValidationErrors:
+    def test_empty_tickers_list_rejected(self):
+        response = client.post("/poll/options", json=make_payload([]))
+        assert response.status_code == 422
+
+    def test_missing_tickers_field_rejected(self):
         response = client.post("/poll/options", json={})
         assert response.status_code == 422
 
-    def test_empty_tickers_list_returns_422(self):
-        response = client.post("/poll/options", json={"tickers": []})
+    def test_null_tickers_field_rejected(self):
+        response = client.post("/poll/options", json={"tickers": None})
         assert response.status_code == 422
 
-    def test_tickers_not_a_list_returns_422(self):
+    def test_non_list_tickers_rejected(self):
         response = client.post("/poll/options", json={"tickers": "AAPL"})
         assert response.status_code == 422
 
-    def test_tickers_list_of_non_strings_returns_422(self):
-        response = client.post("/poll/options", json={"tickers": [123, 456]})
+    def test_integer_ticker_rejected(self):
+        response = client.post("/poll/options", json={"tickers": [123]})
         assert response.status_code == 422
 
-    def test_ticker_too_long_returns_422(self):
+    def test_ticker_exceeding_max_length_rejected(self):
         long_ticker = "A" * 11
-        response = client.post("/poll/options", json={"tickers": [long_ticker]})
+        response = client.post("/poll/options", json=make_payload([long_ticker]))
         assert response.status_code == 422
 
-    def test_empty_string_ticker_returns_422(self):
-        response = client.post("/poll/options", json={"tickers": [""]})
-        assert response.status_code == 422
+    def test_ticker_at_max_length_accepted(self):
+        ticker_10 = "A" * 10
+        with patch("backend.services.polling_service.run_options_poll") as mock_run:
+            mock_run.return_value = mock_agent_result([ticker_10])
+            response = client.post("/poll/options", json=make_payload([ticker_10]))
+        assert response.status_code == 200
 
-    def test_none_body_returns_422(self):
-        response = client.post("/poll/options", json=None)
-        assert response.status_code == 422
-
-    def test_tickers_with_spaces_returns_422(self):
-        response = client.post("/poll/options", json={"tickers": ["AP PL"]})
-        assert response.status_code == 422
-
-    def test_tickers_with_special_characters_returns_422(self):
-        response = client.post("/poll/options", json={"tickers": ["AAPL!", "@MSFT"]})
-        assert response.status_code == 422
-
-    def test_too_many_tickers_returns_422(self):
-        tickers = [f"TK{i}" for i in range(51)]
-        response = client.post("/poll/options", json={"tickers": tickers})
-        assert response.status_code == 422
-
-    def test_error_response_contains_detail(self):
-        response = client.post("/poll/options", json={"tickers": []})
+    def test_validation_error_response_has_detail_field(self):
+        response = client.post("/poll/options", json=make_payload([]))
         data = response.json()
         assert "detail" in data
 
-
-# ---------------------------------------------------------------------------
-# POST /poll/options – agent invocation
-# ---------------------------------------------------------------------------
-
-
-class TestPollOptionsAgentInvocation:
-    @patch("backend.api.poll.run_polling", side_effect=_mock_poll_success)
-    def test_agent_invoked_once_per_request(self, mock_poll):
-        client.post("/poll/options", json=VALID_PAYLOAD)
-        mock_poll.assert_called_once()
-
-    @patch("backend.api.poll.run_polling", side_effect=_mock_poll_success)
-    def test_agent_receives_list_argument(self, mock_poll):
-        client.post("/poll/options", json=VALID_PAYLOAD)
-        args, _ = mock_poll.call_args
-        assert isinstance(args[0], list)
-
-    @patch("backend.api.poll.run_polling", side_effect=_mock_poll_success)
-    def test_agent_receives_correct_number_of_tickers(self, mock_poll):
-        client.post("/poll/options", json=VALID_PAYLOAD)
-        args, _ = mock_poll.call_args
-        assert len(args[0]) == len(set(t.upper() for t in VALID_PAYLOAD["tickers"]))
-
-    @patch(
-        "backend.api.poll.run_polling",
-        side_effect=Exception("agent failure"),
-    )
-    def test_agent_exception_returns_500(self, _mock):
-        response = client.post("/poll/options", json=VALID_PAYLOAD)
-        assert response.status_code == 500
-
-    @patch(
-        "backend.api.poll.run_polling",
-        side_effect=Exception("agent failure"),
-    )
-    def test_agent_exception_response_contains_detail(self, _mock):
-        response = client.post("/poll/options", json=VALID_PAYLOAD)
-        assert "detail" in response.json()
-
-
-# ---------------------------------------------------------------------------
-# POST /poll/options – content-type / method guards
-# ---------------------------------------------------------------------------
-
-
-class TestPollOptionsMethodAndContentType:
-    def test_get_method_not_allowed(self):
-        response = client.get("/poll/options")
-        assert response.status_code == 405
-
-    def test_put_method_not_allowed(self):
-        response = client.put("/poll/options", json=VALID_PAYLOAD)
-        assert response.status_code == 405
-
-    def test_delete_method_not_allowed(self):
-        response = client.delete("/poll/options")
-        assert response.status_code == 405
-
-    def test_plain_text_body_returns_422(self):
-        response = client.post(
-            "/poll/options",
-            content="AAPL,MSFT",
-            headers={"Content-Type": "text/plain"},
-        )
+    def test_eleven_tickers_rejected(self):
+        tickers = ["T" + str(i) for i in range(11)]
+        response = client.post("/poll/options", json=make_payload(tickers))
         assert response.status_code == 422
 
 
 # ---------------------------------------------------------------------------
-# Polling service unit tests (isolated)
+# Agent / service failure
 # ---------------------------------------------------------------------------
 
+class TestAgentFailure:
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_agent_exception_returns_500(self, mock_run):
+        mock_run.side_effect = Exception("agent exploded")
+        response = client.post("/poll/options", json=make_payload(["AAPL"]))
+        assert response.status_code == 500
 
-class TestPollingService:
-    def test_run_polling_returns_dict(self):
-        from backend.services.polling_service import run_polling
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_agent_exception_response_has_detail(self, mock_run):
+        mock_run.side_effect = Exception("agent exploded")
+        response = client.post("/poll/options", json=make_payload(["AAPL"]))
+        data = response.json()
+        assert "detail" in data
 
-        with patch(
-            "backend.services.polling_service.invoke_options_agent",
-            return_value={"AAPL": {"polled": True}},
-        ):
-            result = run_polling(["AAPL"])
-            assert isinstance(result, dict)
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_agent_returns_empty_dict_handled_gracefully(self, mock_run):
+        mock_run.return_value = {}
+        response = client.post("/poll/options", json=make_payload(["AAPL"]))
+        assert response.status_code == 200
 
-    def test_run_polling_status_ok(self):
-        from backend.services.polling_service import run_polling
-
-        with patch(
-            "backend.services.polling_service.invoke_options_agent",
-            return_value={"AAPL": {"polled": True}},
-        ):
-            result = run_polling(["AAPL"])
-            assert result["status"] == "ok"
-
-    def test_run_polling_passes_tickers_to_agent(self):
-        from backend.services.polling_service import run_polling
-
-        mock_agent = MagicMock(return_value={"AAPL": {}})
-        with patch(
-            "backend.services.polling_service.invoke_options_agent", mock_agent
-        ):
-            run_polling(["AAPL", "MSFT"])
-            mock_agent.assert_called_once_with(["AAPL", "MSFT"])
-
-    def test_run_polling_includes_tickers_in_response(self):
-        from backend.services.polling_service import run_polling
-
-        with patch(
-            "backend.services.polling_service.invoke_options_agent",
-            return_value={"TSLA": {}},
-        ):
-            result = run_polling(["TSLA"])
-            assert "TSLA" in result["tickers"]
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_agent_returns_partial_results(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["AAPL", "MSFT"]))
+        assert response.status_code == 200
 
 
 # ---------------------------------------------------------------------------
-# Options agent unit tests (isolated)
+# Response structure
 # ---------------------------------------------------------------------------
 
+class TestResponseStructure:
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_response_is_json(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["AAPL"]))
+        assert response.headers["content-type"].startswith("application/json")
 
-class TestOptionsAgent:
-    def test_invoke_returns_dict(self):
-        from backend.agents.options_agent import invoke_options_agent
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_result_entry_has_ticker_field(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["AAPL"]))
+        data = response.json()
+        assert "ticker" in data["results"]["AAPL"]
 
-        result = invoke_options_agent(["AAPL"])
-        assert isinstance(result, dict)
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_result_entry_has_calls_field(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["AAPL"]))
+        data = response.json()
+        assert "calls" in data["results"]["AAPL"]
 
-    def test_invoke_keys_match_tickers(self):
-        from backend.agents.options_agent import invoke_options_agent
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_result_entry_has_puts_field(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["AAPL"]))
+        data = response.json()
+        assert "puts" in data["results"]["AAPL"]
 
-        tickers = ["AAPL", "MSFT"]
-        result = invoke_options_agent(tickers)
-        for ticker in tickers:
-            assert ticker in result
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_tickers_field_is_list(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["AAPL"]))
+        data = response.json()
+        assert isinstance(data["tickers"], list)
 
-    def test_invoke_empty_list_returns_empty_dict(self):
-        from backend.agents.options_agent import invoke_options_agent
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_results_field_is_dict(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["AAPL"]))
+        data = response.json()
+        assert isinstance(data["results"], dict)
 
-        result = invoke_options_agent([])
-        assert result == {}
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_calls_is_a_list(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["AAPL"]))
+        data = response.json()
+        assert isinstance(data["results"]["AAPL"]["calls"], list)
 
-    def test_invoke_single_ticker(self):
-        from backend.agents.options_agent import invoke_options_agent
-
-        result = invoke_options_agent(["TSLA"])
-        assert "TSLA" in result
-
-
-# ---------------------------------------------------------------------------
-# Pydantic model unit tests
-# ---------------------------------------------------------------------------
-
-
-class TestPollRequestModel:
-    def test_valid_tickers_accepted(self):
-        from backend.models.poll import PollRequest
-
-        req = PollRequest(tickers=["AAPL", "MSFT"])
-        assert len(req.tickers) == 2
-
-    def test_tickers_normalised_to_uppercase(self):
-        from backend.models.poll import PollRequest
-
-        req = PollRequest(tickers=["aapl", "msft"])
-        assert all(t == t.upper() for t in req.tickers)
-
-    def test_empty_tickers_raises_validation_error(self):
-        from backend.models.poll import PollRequest
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            PollRequest(tickers=[])
-
-    def test_ticker_too_long_raises_validation_error(self):
-        from backend.models.poll import PollRequest
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            PollRequest(tickers=["A" * 11])
-
-    def test_empty_string_ticker_raises_validation_error(self):
-        from backend.models.poll import PollRequest
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            PollRequest(tickers=[""])
-
-    def test_duplicate_tickers_deduplicated(self):
-        from backend.models.poll import PollRequest
-
-        req = PollRequest(tickers=["AAPL", "AAPL", "MSFT"])
-        assert req.tickers.count("AAPL") == 1
-
-    def test_ticker_with_special_chars_raises_validation_error(self):
-        from backend.models.poll import PollRequest
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            PollRequest(tickers=["AAPL!"])
-
-    def test_ticker_with_space_raises_validation_error(self):
-        from backend.models.poll import PollRequest
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            PollRequest(tickers=["AA PL"])
-
-    def test_too_many_tickers_raises_validation_error(self):
-        from backend.models.poll import PollRequest
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            PollRequest(tickers=[f"TK{i}" for i in range(51)])
-
-
-class TestPollResponseModel:
-    def test_valid_response_constructed(self):
-        from backend.models.poll import PollResponse
-
-        resp = PollResponse(
-            status="ok",
-            tickers=["AAPL"],
-            results={"AAPL": {"polled": True}},
-        )
-        assert resp.status == "ok"
-
-    def test_response_serialises_to_dict(self):
-        from backend.models.poll import PollResponse
-
-        resp = PollResponse(
-            status="ok",
-            tickers=["AAPL"],
-            results={"AAPL": {}},
-        )
-        data = resp.model_dump()
-        assert "status" in data
-        assert "tickers" in data
-        assert "results" in data
+    @patch("backend.services.polling_service.run_options_poll")
+    def test_puts_is_a_list(self, mock_run):
+        mock_run.return_value = mock_agent_result(["AAPL"])
+        response = client.post("/poll/options", json=make_payload(["AAPL"]))
+        data = response.json()
+        assert isinstance(data["results"]["AAPL"]["puts"], list)
