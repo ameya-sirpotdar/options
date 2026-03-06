@@ -1,14 +1,13 @@
 .env
 *.env
-.env.*
-!.env.example
+*.env.*
+!*.env.example
 
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.pyo
-*.pyd
 .Python
 build/
 dist/
@@ -17,10 +16,10 @@ dist/
 *.egg
 
 # Virtual environments
-venv/
 .venv/
+venv/
 env/
-.ENV/
+ENV/
 
 # Testing
 .pytest_cache/
@@ -39,26 +38,27 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Secrets and credentials
-*.pem
-*.key
-*.pfx
-*.p12
-secrets/
-credentials/
-
-# Azure
-*.publishsettings
-*.azurePubxml
+# Bicep / Azure
 infra/bicep/main.bicepparam
+*.bicepparam
+!*.bicepparam.example
 
 # Terraform (legacy – no longer used)
+**/.terraform/
 *.tfstate
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
-.terraform/
 .terraform.lock.hcl
+
+# Secrets and credentials
+*.pem
+*.key
+*.p12
+*.pfx
+serviceaccount.json
+kubeconfig
+*.kubeconfig
 
 # Logs
 *.log
@@ -67,6 +67,3 @@ logs/
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb
-
-# Node (if any tooling is added)
-node_modules/
