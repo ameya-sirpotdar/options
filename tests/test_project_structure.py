@@ -16,7 +16,6 @@ EXPECTED_PATHS = [
     "infra/bicep/main.bicepparam.example",
     "infra/bicep/modules/aks.bicep",
     "infra/bicep/modules/storage.bicep",
-    "infra/bicep/.gitignore",
     "infra/README.md",
     "tests/test_project_structure.py",
 ]
@@ -75,59 +74,52 @@ def test_frontend_vue_app_directory_exists():
     )
 
 
-def test_infra_terraform_directory_does_not_exist():
+def test_terraform_directory_does_not_exist():
     terraform_dir = os.path.join(REPO_ROOT, "infra", "terraform")
-    assert not os.path.isdir(terraform_dir), (
-        "infra/terraform/ placeholder directory should have been removed in favour of Bicep IaC"
+    assert not os.path.exists(terraform_dir), (
+        "infra/terraform/ directory must not exist; legacy Terraform placeholder has been removed"
     )
 
 
-def test_infra_bicep_directory_exists():
+def test_bicep_directory_exists():
     bicep_dir = os.path.join(REPO_ROOT, "infra", "bicep")
     assert os.path.isdir(bicep_dir), (
         "infra/bicep/ directory must exist"
     )
 
 
-def test_infra_bicep_modules_directory_exists():
+def test_bicep_modules_directory_exists():
     modules_dir = os.path.join(REPO_ROOT, "infra", "bicep", "modules")
     assert os.path.isdir(modules_dir), (
         "infra/bicep/modules/ directory must exist"
     )
 
 
-def test_infra_bicep_main_bicep_is_file():
+def test_bicep_main_is_file():
     main_bicep = os.path.join(REPO_ROOT, "infra", "bicep", "main.bicep")
     assert os.path.isfile(main_bicep), (
         "infra/bicep/main.bicep must be a file"
     )
 
 
-def test_infra_bicep_main_bicepparam_example_is_file():
+def test_bicep_main_bicepparam_example_is_file():
     param_example = os.path.join(REPO_ROOT, "infra", "bicep", "main.bicepparam.example")
     assert os.path.isfile(param_example), (
         "infra/bicep/main.bicepparam.example must be a file"
     )
 
 
-def test_infra_bicep_aks_module_is_file():
-    aks_bicep = os.path.join(REPO_ROOT, "infra", "bicep", "modules", "aks.bicep")
-    assert os.path.isfile(aks_bicep), (
+def test_bicep_aks_module_is_file():
+    aks_module = os.path.join(REPO_ROOT, "infra", "bicep", "modules", "aks.bicep")
+    assert os.path.isfile(aks_module), (
         "infra/bicep/modules/aks.bicep must be a file"
     )
 
 
-def test_infra_bicep_storage_module_is_file():
-    storage_bicep = os.path.join(REPO_ROOT, "infra", "bicep", "modules", "storage.bicep")
-    assert os.path.isfile(storage_bicep), (
+def test_bicep_storage_module_is_file():
+    storage_module = os.path.join(REPO_ROOT, "infra", "bicep", "modules", "storage.bicep")
+    assert os.path.isfile(storage_module), (
         "infra/bicep/modules/storage.bicep must be a file"
-    )
-
-
-def test_infra_bicep_gitignore_is_file():
-    gitignore = os.path.join(REPO_ROOT, "infra", "bicep", ".gitignore")
-    assert os.path.isfile(gitignore), (
-        "infra/bicep/.gitignore must be a file"
     )
 
 
@@ -135,6 +127,16 @@ def test_infra_readme_is_file():
     readme = os.path.join(REPO_ROOT, "infra", "README.md")
     assert os.path.isfile(readme), (
         "infra/README.md must be a file"
+    )
+
+
+def test_infra_readme_is_not_empty():
+    readme = os.path.join(REPO_ROOT, "infra", "README.md")
+    assert os.path.isfile(readme), (
+        "infra/README.md must exist"
+    )
+    assert os.path.getsize(readme) > 0, (
+        "infra/README.md must not be empty"
     )
 
 
