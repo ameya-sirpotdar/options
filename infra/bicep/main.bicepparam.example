@@ -1,6 +1,6 @@
-// Example parameter file for main.bicep
-// Copy this file to main.bicepparam and fill in your values.
-// WARNING: main.bicepparam is git-ignored. Never commit real parameter files.
+// Example parameters file for main.bicep
+// Copy this file to main.bicepparam and fill in the values
+// DO NOT commit main.bicepparam to source control
 
 using './main.bicep'
 
