@@ -3,39 +3,36 @@ targetScope = 'subscription'
 @description('Azure region for all resources')
 param location string = 'eastus'
 
-@description('Environment name used to generate unique resource names')
-param environmentName string
+@description('Environment name used to generate resource names')
+param environmentName string = 'dev'
 
 @description('Name of the resource group to create')
-param resourceGroupName string = 'rg-${environmentName}'
+param resourceGroupName string = 'rg-options-pipeline-${environmentName}'
 
-@description('AKS cluster name')
-param aksClusterName string = 'aks-${environmentName}'
-
-@description('Number of nodes in the AKS default node pool')
+@description('Number of nodes in the AKS agent pool')
 param aksNodeCount int = 2
 
-@description('VM size for AKS nodes')
+@description('VM size for AKS agent pool nodes')
 param aksNodeVmSize string = 'Standard_B2s'
 
-@description('Storage account name (must be globally unique, 3-24 lowercase alphanumeric)')
-param storageAccountName string
+@description('Name of the AKS cluster')
+param aksClusterName string = 'aks-options-pipeline-${environmentName}'
 
-@description('Tags to apply to all resources')
-param tags object = {
-  environment: environmentName
-  managedBy: 'bicep'
-  project: 'azure-sentiment-pipeline'
-}
+@description('Name of the Storage Account')
+param storageAccountName string = 'stoptions${environmentName}'
 
 // ---------------------------------------------------------------------------
 // Resource Group
 // ---------------------------------------------------------------------------
 
-resource rg 'Microsoft.Resources/resourceGroups@2022-09-01' = {
+resource rg 'Microsoft.Resources/resourceGroups@2023-07-01' = {
   name: resourceGroupName
   location: location
-  tags: tags
+  tags: {
+    environment: environmentName
+    project: 'options-pipeline'
+    managedBy: 'bicep'
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -46,11 +43,11 @@ module aks 'modules/aks.bicep' = {
   name: 'aks-deployment'
   scope: rg
   params: {
-    clusterName: aksClusterName
     location: location
+    clusterName: aksClusterName
     nodeCount: aksNodeCount
     nodeVmSize: aksNodeVmSize
-    tags: tags
+    environmentName: environmentName
   }
 }
 
@@ -62,9 +59,9 @@ module storage 'modules/storage.bicep' = {
   name: 'storage-deployment'
   scope: rg
   params: {
-    storageAccountName: storageAccountName
     location: location
-    tags: tags
+    storageAccountName: storageAccountName
+    environmentName: environmentName
   }
 }
 
@@ -75,17 +72,14 @@ module storage 'modules/storage.bicep' = {
 @description('Name of the provisioned resource group')
 output resourceGroupName string = rg.name
 
-@description('AKS cluster name')
+@description('Name of the AKS cluster')
 output aksClusterName string = aks.outputs.clusterName
 
-@description('AKS cluster resource ID')
-output aksClusterResourceId string = aks.outputs.clusterResourceId
+@description('Resource ID of the AKS cluster')
+output aksClusterId string = aks.outputs.clusterId
 
-@description('Storage account name')
+@description('Name of the Storage Account')
 output storageAccountName string = storage.outputs.storageAccountName
 
-@description('Storage account resource ID')
-output storageAccountResourceId string = storage.outputs.storageAccountResourceId
-
-@description('Names of the Table Storage tables created')
-output storageTableNames array = storage.outputs.tableNames
+@description('Primary endpoint for Table Storage')
+output tableStorageEndpoint string = storage.outputs.tableStorageEndpoint
