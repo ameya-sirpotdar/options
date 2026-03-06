@@ -7,19 +7,22 @@ param location string = 'eastus'
 param environmentName string = 'dev'
 
 @description('Name of the resource group to create')
-param resourceGroupName string = 'rg-options-pipeline-${environmentName}'
+param resourceGroupName string = 'rg-options-analyzer-${environmentName}'
 
-@description('Number of nodes in the AKS agent pool')
+@description('Kubernetes version for the AKS cluster')
+param kubernetesVersion string = '1.29'
+
+@description('Number of nodes in the AKS default node pool')
 param aksNodeCount int = 2
 
-@description('VM size for AKS agent pool nodes')
+@description('VM size for AKS nodes')
 param aksNodeVmSize string = 'Standard_B2s'
 
 @description('Name of the AKS cluster')
-param aksClusterName string = 'aks-options-pipeline-${environmentName}'
+param aksClusterName string = 'aks-options-analyzer-${environmentName}'
 
 @description('Name of the Storage Account')
-param storageAccountName string = 'stoptions${environmentName}'
+param storageAccountName string = 'stooptionsanalyzer${environmentName}'
 
 // ---------------------------------------------------------------------------
 // Resource Group
@@ -30,7 +33,7 @@ resource rg 'Microsoft.Resources/resourceGroups@2023-07-01' = {
   location: location
   tags: {
     environment: environmentName
-    project: 'options-pipeline'
+    project: 'options-analyzer'
     managedBy: 'bicep'
   }
 }
@@ -45,6 +48,7 @@ module aks 'modules/aks.bicep' = {
   params: {
     location: location
     clusterName: aksClusterName
+    kubernetesVersion: kubernetesVersion
     nodeCount: aksNodeCount
     nodeVmSize: aksNodeVmSize
     environmentName: environmentName
@@ -75,11 +79,11 @@ output resourceGroupName string = rg.name
 @description('Name of the AKS cluster')
 output aksClusterName string = aks.outputs.clusterName
 
-@description('Resource ID of the AKS cluster')
-output aksClusterId string = aks.outputs.clusterId
+@description('FQDN of the AKS API server')
+output aksControlPlaneFqdn string = aks.outputs.controlPlaneFqdn
 
 @description('Name of the Storage Account')
 output storageAccountName string = storage.outputs.storageAccountName
 
-@description('Primary endpoint for Table Storage')
+@description('Primary endpoint for Azure Table Storage')
 output tableStorageEndpoint string = storage.outputs.tableStorageEndpoint
