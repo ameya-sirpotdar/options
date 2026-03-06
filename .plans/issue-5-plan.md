@@ -1,36 +1,14 @@
 # Implementation Plan: Story 1.3 – Provision Azure Cloud Resources
 
-## Tool Choice: Bicep vs Terraform
+## Tool Choice: Bicep
 
-Before proceeding, here is an honest comparison to inform the decision. Since you have ruled out multi-cloud portability, that removes Terraform's most commonly cited advantage.
+This plan uses **Bicep** — Microsoft's first-party infrastructure-as-code language for Azure. Key reasons:
 
-### Comparison Table
-
-| Dimension | Bicep | Terraform |
-|---|---|---|
-| **Azure-nativeness** | First-party Microsoft tool; always supports new Azure features on day one | Third-party; new Azure features sometimes lag by weeks or months |
-| **Learning curve** | Simpler syntax; closer to ARM JSON but far more readable | HCL is clean but adds a separate language/ecosystem to learn |
-| **State management** | No state file; Azure Resource Manager is the source of truth | Requires managing a state file (local or remote); common source of operational pain |
-| **Drift detection** | `what-if` shows live drift against ARM; no state to go stale | State file can drift from reality; `terraform refresh` needed |
-| **Tooling & IDE support** | Official VS Code extension with IntelliSense, type checking, linting | Mature ecosystem but third-party |
-| **CI/CD integration** | Native Azure DevOps tasks and GitHub Actions; `az deployment` CLI | Requires installing Terraform binary; more CI setup |
-| **Modularity** | Bicep modules are well-supported and composable | Terraform modules are mature and widely shared on the registry |
-| **Multi-cloud** | Azure only | AWS, GCP, Azure, and many others |
-| **Community/ecosystem** | Smaller but growing; backed by Microsoft | Very large community; abundant examples |
-| **Secrets/sensitive outputs** | No built-in `sensitive` flag on outputs (handled via Key Vault pattern) | `sensitive = true` on outputs suppresses terminal display |
-| **Past pain points you cited** | N/A | State corruption, provider version conflicts, plan/apply drift |
-
-### Recommendation
-
-**Use Bicep.** Given that:
-
-1. You are Azure-only and have no plans to change.
-2. Your past Terraform experience was negative — the most common pain points (state file management, provider version drift, state corruption) are entirely absent from Bicep.
-3. Bicep has no state file to manage; Azure Resource Manager itself tracks what exists.
-4. Bicep is maintained by Microsoft, so AKS and Storage Table support is always current.
-5. The `az deployment` CLI and `what-if` command give you safe, readable previews equivalent to `terraform plan`.
-
-The rest of this plan uses Bicep.
+1. Azure-only project with no multi-cloud requirements.
+2. No state file to manage; Azure Resource Manager is the source of truth.
+3. Built-in `what-if` command provides safe, readable previews equivalent to `terraform plan`.
+4. Maintained by Microsoft; AKS and Storage Table support is always current.
+5. Native Azure CLI integration — no additional tooling beyond the Azure CLI itself.
 
 ---
 
@@ -86,7 +64,7 @@ Ensures `main.bicepparam` and any generated ARM JSON files are not committed.
 ## Files to Modify
 
 ### `/infra/terraform/.gitkeep` and `/infra/.gitkeep`
-Remove these placeholder files once real Bicep files are added.
+Remove these placeholder files. The `/infra/terraform/` directory can be removed entirely since Bicep replaces it.
 
 ### `tests/test_project_structure.py`
 Add assertions to verify that the expected Bicep files exist under `/infra/bicep/`.
@@ -99,7 +77,7 @@ Add Bicep-specific ignores.
 ## Implementation Steps
 
 ### Step 1 — Remove placeholder files
-Delete `/infra/.gitkeep` and `/infra/terraform/.gitkeep`. The `/infra/terraform/` directory can be removed entirely since Bicep replaces it, or kept empty with a note if the directory is referenced elsewhere.
+Delete `/infra/.gitkeep` and `/infra/terraform/.gitkeep`. Remove the `/infra/terraform/` directory entirely.
 
 ---
 
@@ -112,7 +90,7 @@ param location string
 @description('Name of the AKS cluster.')
 param aksClusterName string
 
-@description('Name of the resource group (used for tagging reference only).')
+@description('Environment label for tagging.')
 param environment string
 
 @description('Number of nodes in the default node pool.')
@@ -393,7 +371,7 @@ cp infra/bicep/main.bicepparam.example infra/bicep/main.bicepparam
 
 `main.bicepparam` is gitignored and must never be committed.
 
-## Preview Changes (equivalent to terraform plan)
+## Preview Changes
 
 ```bash
 az deployment sub what-if \
@@ -452,3 +430,56 @@ After deployment, fetch the kubeconfig:
 
 ```bash
 az aks get-credentials \
+  --resource-group rg-options-trading-mvp \
+  --name aks-options-trading-mvp
+```
+
+Verify the cluster is reachable:
+
+```bash
+kubectl get nodes
+```
+````
+
+---
+
+### Step 9 — Update `tests/test_project_structure.py`
+
+Add assertions confirming the expected Bicep files are present:
+
+```python
+def test_bicep_infra_files_exist():
+    """Verify that all expected Bicep infrastructure files are present."""
+    expected_files = [
+        "infra/bicep/main.bicep",
+        "infra/bicep/main.bicepparam.example",
+        "infra/bicep/modules/aks.bicep",
+        "infra/bicep/modules/storage.bicep",
+        "infra/README.md",
+    ]
+    for filepath in expected_files:
+        assert os.path.isfile(filepath), f"Expected infrastructure file not found: {filepath}"
+
+
+def test_bicep_gitignore_exists():
+    """Verify that the Bicep .gitignore is present to protect sensitive parameter files."""
+    assert os.path.isfile("infra/bicep/.gitignore"), (
+        "infra/bicep/.gitignore is missing — main.bicepparam must be gitignored"
+    )
+
+
+def test_terraform_directory_removed():
+    """Verify that the legacy terraform placeholder directory has been removed."""
+    assert not os.path.exists("infra/terraform"), (
+        "infra/terraform/ should be removed; Bicep replaces it"
+    )
+```
+
+---
+
+## Acceptance Criteria Checklist
+
+| # | Criterion | Verified by |
+|---|---|---|
+| 1 | `/infra/bicep/main.bicep` exists and targets subscription scope | `test_bicep_infra_files_exist` |
+| 2 | `/infra/bicep/modules/aks.bicep` defines a 2-node `Standard_B
