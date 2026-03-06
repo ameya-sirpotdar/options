@@ -1,511 +1,779 @@
 import pytest
+from datetime import datetime, timezone
 from pydantic import ValidationError
+
 from backend.models.options_data import OptionsData
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def valid_kwargs(**overrides):
-    """Return a dict of valid OptionsData constructor arguments."""
-    defaults = {
-        "ticker": "AAPL",
-        "timestamp": "2024-01-15T10:30:00Z",
-        "expiration_date": "2024-03-15",
-        "strike": 150.0,
-        "option_type": "call",
-        "bid": 5.25,
-        "ask": 5.50,
-        "last_price": 5.35,
-        "volume": 1000,
-        "open_interest": 5000,
-        "implied_volatility": 0.25,
-    }
-    defaults.update(overrides)
-    return defaults
-
-
-# ---------------------------------------------------------------------------
-# Construction – happy path
-# ---------------------------------------------------------------------------
-
-class TestOptionsDataConstruction:
-    def test_basic_construction(self):
-        data = OptionsData(**valid_kwargs())
+class TestOptionsDataCreation:
+    def test_create_minimal_valid_options_data(self):
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.25,
+            premium=3.50,
+        )
         assert data.ticker == "AAPL"
+        assert data.timestamp == "2024-01-15T10:30:00Z"
+        assert data.expiry == "2024-02-16"
         assert data.strike == 150.0
-        assert data.option_type == "call"
+        assert data.delta == 0.45
+        assert data.theta == -0.05
+        assert data.iv == 0.25
+        assert data.premium == 3.50
 
-    def test_put_option_type(self):
-        data = OptionsData(**valid_kwargs(option_type="put"))
-        assert data.option_type == "put"
+    def test_create_with_all_fields(self):
+        data = OptionsData(
+            ticker="SPY",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-03-15",
+            strike=450.0,
+            delta=0.50,
+            theta=-0.10,
+            iv=0.18,
+            premium=5.75,
+        )
+        assert data.ticker == "SPY"
+        assert data.strike == 450.0
 
-    def test_optional_fields_default_to_none(self):
-        data = OptionsData(**valid_kwargs())
-        # implied_volatility is provided; check a truly optional field if any
-        assert data.implied_volatility == 0.25
-
-    def test_zero_volume_allowed(self):
-        data = OptionsData(**valid_kwargs(volume=0))
-        assert data.volume == 0
-
-    def test_zero_open_interest_allowed(self):
-        data = OptionsData(**valid_kwargs(open_interest=0))
-        assert data.open_interest == 0
-
-    def test_implied_volatility_none_allowed(self):
-        data = OptionsData(**valid_kwargs(implied_volatility=None))
-        assert data.implied_volatility is None
-
-    def test_large_strike_value(self):
-        data = OptionsData(**valid_kwargs(strike=99999.99))
-        assert data.strike == 99999.99
-
-    def test_ticker_is_uppercased(self):
-        data = OptionsData(**valid_kwargs(ticker="aapl"))
-        assert data.ticker == "AAPL"
-
-    def test_ticker_mixed_case_uppercased(self):
-        data = OptionsData(**valid_kwargs(ticker="Msft"))
-        assert data.ticker == "MSFT"
-
-    def test_option_type_lowercased(self):
-        data = OptionsData(**valid_kwargs(option_type="CALL"))
-        assert data.option_type == "call"
-
-    def test_option_type_put_lowercased(self):
-        data = OptionsData(**valid_kwargs(option_type="PUT"))
-        assert data.option_type == "put"
-
-
-# ---------------------------------------------------------------------------
-# PartitionKey and RowKey derivation
-# ---------------------------------------------------------------------------
-
-class TestPartitionKeyRowKey:
-    def test_partition_key_equals_ticker(self):
-        data = OptionsData(**valid_kwargs(ticker="TSLA"))
+    def test_partition_key_is_ticker(self):
+        data = OptionsData(
+            ticker="TSLA",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=200.0,
+            delta=0.40,
+            theta=-0.08,
+            iv=0.55,
+            premium=8.00,
+        )
         assert data.PartitionKey == "TSLA"
 
-    def test_row_key_equals_timestamp(self):
+    def test_row_key_is_timestamp(self):
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.25,
+            premium=3.50,
+        )
+        assert data.RowKey == "2024-01-15T10:30:00Z"
+
+    def test_partition_key_syncs_with_ticker(self):
+        data = OptionsData(
+            ticker="MSFT",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=300.0,
+            delta=0.55,
+            theta=-0.06,
+            iv=0.22,
+            premium=4.20,
+        )
+        assert data.PartitionKey == data.ticker
+
+    def test_row_key_syncs_with_timestamp(self):
         ts = "2024-01-15T10:30:00Z"
-        data = OptionsData(**valid_kwargs(timestamp=ts))
-        assert data.RowKey == ts
-
-    def test_partition_key_reflects_uppercase(self):
-        data = OptionsData(**valid_kwargs(ticker="goog"))
-        assert data.PartitionKey == "GOOG"
-
-    def test_row_key_is_string(self):
-        data = OptionsData(**valid_kwargs())
-        assert isinstance(data.RowKey, str)
-
-    def test_partition_key_is_string(self):
-        data = OptionsData(**valid_kwargs())
-        assert isinstance(data.PartitionKey, str)
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp=ts,
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.25,
+            premium=3.50,
+        )
+        assert data.RowKey == data.timestamp
 
 
-# ---------------------------------------------------------------------------
-# Serialization – to_entity()
-# ---------------------------------------------------------------------------
+class TestOptionsDataValidation:
+    def test_ticker_cannot_be_empty(self):
+        with pytest.raises(ValidationError) as exc_info:
+            OptionsData(
+                ticker="",
+                timestamp="2024-01-15T10:30:00Z",
+                expiry="2024-02-16",
+                strike=150.0,
+                delta=0.45,
+                theta=-0.05,
+                iv=0.25,
+                premium=3.50,
+            )
+        errors = exc_info.value.errors()
+        assert any("ticker" in str(e) for e in errors)
 
-class TestToEntity:
+    def test_ticker_cannot_contain_forward_slash(self):
+        with pytest.raises(ValidationError) as exc_info:
+            OptionsData(
+                ticker="AA/PL",
+                timestamp="2024-01-15T10:30:00Z",
+                expiry="2024-02-16",
+                strike=150.0,
+                delta=0.45,
+                theta=-0.05,
+                iv=0.25,
+                premium=3.50,
+            )
+        errors = exc_info.value.errors()
+        assert any("ticker" in str(e) for e in errors)
+
+    def test_ticker_cannot_contain_backslash(self):
+        with pytest.raises(ValidationError) as exc_info:
+            OptionsData(
+                ticker="AA\\PL",
+                timestamp="2024-01-15T10:30:00Z",
+                expiry="2024-02-16",
+                strike=150.0,
+                delta=0.45,
+                theta=-0.05,
+                iv=0.25,
+                premium=3.50,
+            )
+        errors = exc_info.value.errors()
+        assert any("ticker" in str(e) for e in errors)
+
+    def test_ticker_cannot_contain_hash(self):
+        with pytest.raises(ValidationError) as exc_info:
+            OptionsData(
+                ticker="AA#PL",
+                timestamp="2024-01-15T10:30:00Z",
+                expiry="2024-02-16",
+                strike=150.0,
+                delta=0.45,
+                theta=-0.05,
+                iv=0.25,
+                premium=3.50,
+            )
+        errors = exc_info.value.errors()
+        assert any("ticker" in str(e) for e in errors)
+
+    def test_ticker_cannot_contain_question_mark(self):
+        with pytest.raises(ValidationError) as exc_info:
+            OptionsData(
+                ticker="AA?PL",
+                timestamp="2024-01-15T10:30:00Z",
+                expiry="2024-02-16",
+                strike=150.0,
+                delta=0.45,
+                theta=-0.05,
+                iv=0.25,
+                premium=3.50,
+            )
+        errors = exc_info.value.errors()
+        assert any("ticker" in str(e) for e in errors)
+
+    def test_timestamp_cannot_be_empty(self):
+        with pytest.raises(ValidationError) as exc_info:
+            OptionsData(
+                ticker="AAPL",
+                timestamp="",
+                expiry="2024-02-16",
+                strike=150.0,
+                delta=0.45,
+                theta=-0.05,
+                iv=0.25,
+                premium=3.50,
+            )
+        errors = exc_info.value.errors()
+        assert any("timestamp" in str(e) for e in errors)
+
+    def test_timestamp_cannot_contain_forward_slash(self):
+        with pytest.raises(ValidationError) as exc_info:
+            OptionsData(
+                ticker="AAPL",
+                timestamp="2024/01/15T10:30:00Z",
+                expiry="2024-02-16",
+                strike=150.0,
+                delta=0.45,
+                theta=-0.05,
+                iv=0.25,
+                premium=3.50,
+            )
+        errors = exc_info.value.errors()
+        assert any("timestamp" in str(e) for e in errors)
+
+    def test_strike_must_be_positive(self):
+        with pytest.raises(ValidationError) as exc_info:
+            OptionsData(
+                ticker="AAPL",
+                timestamp="2024-01-15T10:30:00Z",
+                expiry="2024-02-16",
+                strike=-10.0,
+                delta=0.45,
+                theta=-0.05,
+                iv=0.25,
+                premium=3.50,
+            )
+        errors = exc_info.value.errors()
+        assert any("strike" in str(e) for e in errors)
+
+    def test_strike_cannot_be_zero(self):
+        with pytest.raises(ValidationError) as exc_info:
+            OptionsData(
+                ticker="AAPL",
+                timestamp="2024-01-15T10:30:00Z",
+                expiry="2024-02-16",
+                strike=0.0,
+                delta=0.45,
+                theta=-0.05,
+                iv=0.25,
+                premium=3.50,
+            )
+        errors = exc_info.value.errors()
+        assert any("strike" in str(e) for e in errors)
+
+    def test_delta_must_be_between_negative_one_and_one(self):
+        with pytest.raises(ValidationError) as exc_info:
+            OptionsData(
+                ticker="AAPL",
+                timestamp="2024-01-15T10:30:00Z",
+                expiry="2024-02-16",
+                strike=150.0,
+                delta=1.5,
+                theta=-0.05,
+                iv=0.25,
+                premium=3.50,
+            )
+        errors = exc_info.value.errors()
+        assert any("delta" in str(e) for e in errors)
+
+    def test_delta_lower_bound(self):
+        with pytest.raises(ValidationError) as exc_info:
+            OptionsData(
+                ticker="AAPL",
+                timestamp="2024-01-15T10:30:00Z",
+                expiry="2024-02-16",
+                strike=150.0,
+                delta=-1.5,
+                theta=-0.05,
+                iv=0.25,
+                premium=3.50,
+            )
+        errors = exc_info.value.errors()
+        assert any("delta" in str(e) for e in errors)
+
+    def test_delta_boundary_values_valid(self):
+        data_pos = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=1.0,
+            theta=-0.05,
+            iv=0.25,
+            premium=3.50,
+        )
+        assert data_pos.delta == 1.0
+
+        data_neg = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=-1.0,
+            theta=-0.05,
+            iv=0.25,
+            premium=3.50,
+        )
+        assert data_neg.delta == -1.0
+
+    def test_iv_must_be_non_negative(self):
+        with pytest.raises(ValidationError) as exc_info:
+            OptionsData(
+                ticker="AAPL",
+                timestamp="2024-01-15T10:30:00Z",
+                expiry="2024-02-16",
+                strike=150.0,
+                delta=0.45,
+                theta=-0.05,
+                iv=-0.10,
+                premium=3.50,
+            )
+        errors = exc_info.value.errors()
+        assert any("iv" in str(e) for e in errors)
+
+    def test_iv_can_be_zero(self):
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.0,
+            premium=3.50,
+        )
+        assert data.iv == 0.0
+
+    def test_premium_must_be_non_negative(self):
+        with pytest.raises(ValidationError) as exc_info:
+            OptionsData(
+                ticker="AAPL",
+                timestamp="2024-01-15T10:30:00Z",
+                expiry="2024-02-16",
+                strike=150.0,
+                delta=0.45,
+                theta=-0.05,
+                iv=0.25,
+                premium=-1.0,
+            )
+        errors = exc_info.value.errors()
+        assert any("premium" in str(e) for e in errors)
+
+    def test_premium_can_be_zero(self):
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.25,
+            premium=0.0,
+        )
+        assert data.premium == 0.0
+
+    def test_missing_required_field_ticker(self):
+        with pytest.raises(ValidationError):
+            OptionsData(
+                timestamp="2024-01-15T10:30:00Z",
+                expiry="2024-02-16",
+                strike=150.0,
+                delta=0.45,
+                theta=-0.05,
+                iv=0.25,
+                premium=3.50,
+            )
+
+    def test_missing_required_field_strike(self):
+        with pytest.raises(ValidationError):
+            OptionsData(
+                ticker="AAPL",
+                timestamp="2024-01-15T10:30:00Z",
+                expiry="2024-02-16",
+                delta=0.45,
+                theta=-0.05,
+                iv=0.25,
+                premium=3.50,
+            )
+
+    def test_missing_required_field_expiry(self):
+        with pytest.raises(ValidationError):
+            OptionsData(
+                ticker="AAPL",
+                timestamp="2024-01-15T10:30:00Z",
+                strike=150.0,
+                delta=0.45,
+                theta=-0.05,
+                iv=0.25,
+                premium=3.50,
+            )
+
+
+class TestOptionsDataToEntity:
     def test_to_entity_returns_dict(self):
-        data = OptionsData(**valid_kwargs())
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.25,
+            premium=3.50,
+        )
         entity = data.to_entity()
         assert isinstance(entity, dict)
 
     def test_to_entity_contains_partition_key(self):
-        data = OptionsData(**valid_kwargs(ticker="NVDA"))
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.25,
+            premium=3.50,
+        )
         entity = data.to_entity()
-        assert entity["PartitionKey"] == "NVDA"
+        assert "PartitionKey" in entity
+        assert entity["PartitionKey"] == "AAPL"
 
     def test_to_entity_contains_row_key(self):
-        ts = "2024-06-01T09:00:00Z"
-        data = OptionsData(**valid_kwargs(timestamp=ts))
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.25,
+            premium=3.50,
+        )
         entity = data.to_entity()
-        assert entity["RowKey"] == ts
+        assert "RowKey" in entity
+        assert entity["RowKey"] == "2024-01-15T10:30:00Z"
 
-    def test_to_entity_contains_ticker(self):
-        data = OptionsData(**valid_kwargs(ticker="AMZN"))
+    def test_to_entity_contains_all_fields(self):
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.25,
+            premium=3.50,
+        )
         entity = data.to_entity()
-        assert entity["ticker"] == "AMZN"
+        assert "expiry" in entity
+        assert "strike" in entity
+        assert "delta" in entity
+        assert "theta" in entity
+        assert "iv" in entity
+        assert "premium" in entity
 
-    def test_to_entity_contains_timestamp(self):
-        ts = "2024-06-01T09:00:00Z"
-        data = OptionsData(**valid_kwargs(timestamp=ts))
+    def test_to_entity_field_values(self):
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.25,
+            premium=3.50,
+        )
         entity = data.to_entity()
-        assert entity["timestamp"] == ts
+        assert entity["expiry"] == "2024-02-16"
+        assert entity["strike"] == 150.0
+        assert entity["delta"] == 0.45
+        assert entity["theta"] == -0.05
+        assert entity["iv"] == 0.25
+        assert entity["premium"] == 3.50
 
-    def test_to_entity_contains_strike(self):
-        data = OptionsData(**valid_kwargs(strike=200.0))
+    def test_to_entity_does_not_contain_ticker_separately(self):
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.25,
+            premium=3.50,
+        )
         entity = data.to_entity()
-        assert entity["strike"] == 200.0
+        assert "ticker" not in entity
 
-    def test_to_entity_contains_option_type(self):
-        data = OptionsData(**valid_kwargs(option_type="put"))
+    def test_to_entity_does_not_contain_timestamp_separately(self):
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.25,
+            premium=3.50,
+        )
         entity = data.to_entity()
-        assert entity["option_type"] == "put"
-
-    def test_to_entity_contains_bid(self):
-        data = OptionsData(**valid_kwargs(bid=3.10))
-        entity = data.to_entity()
-        assert entity["bid"] == 3.10
-
-    def test_to_entity_contains_ask(self):
-        data = OptionsData(**valid_kwargs(ask=3.20))
-        entity = data.to_entity()
-        assert entity["ask"] == 3.20
-
-    def test_to_entity_contains_volume(self):
-        data = OptionsData(**valid_kwargs(volume=500))
-        entity = data.to_entity()
-        assert entity["volume"] == 500
-
-    def test_to_entity_contains_open_interest(self):
-        data = OptionsData(**valid_kwargs(open_interest=2500))
-        entity = data.to_entity()
-        assert entity["open_interest"] == 2500
-
-    def test_to_entity_contains_implied_volatility(self):
-        data = OptionsData(**valid_kwargs(implied_volatility=0.30))
-        entity = data.to_entity()
-        assert entity["implied_volatility"] == 0.30
-
-    def test_to_entity_none_implied_volatility_excluded_or_none(self):
-        data = OptionsData(**valid_kwargs(implied_volatility=None))
-        entity = data.to_entity()
-        # None values may be excluded or kept as None; either is acceptable
-        assert entity.get("implied_volatility") is None or "implied_volatility" not in entity
-
-    def test_to_entity_expiration_date_present(self):
-        data = OptionsData(**valid_kwargs(expiration_date="2024-03-15"))
-        entity = data.to_entity()
-        assert entity["expiration_date"] == "2024-03-15"
+        assert "timestamp" not in entity
 
 
-# ---------------------------------------------------------------------------
-# Deserialization – from_entity()
-# ---------------------------------------------------------------------------
-
-class TestFromEntity:
-    def _make_entity(self, **overrides):
-        base = {
+class TestOptionsDataFromEntity:
+    def test_from_entity_creates_instance(self):
+        entity = {
             "PartitionKey": "AAPL",
             "RowKey": "2024-01-15T10:30:00Z",
-            "ticker": "AAPL",
-            "timestamp": "2024-01-15T10:30:00Z",
-            "expiration_date": "2024-03-15",
+            "expiry": "2024-02-16",
             "strike": 150.0,
-            "option_type": "call",
-            "bid": 5.25,
-            "ask": 5.50,
-            "last_price": 5.35,
-            "volume": 1000,
-            "open_interest": 5000,
-            "implied_volatility": 0.25,
+            "delta": 0.45,
+            "theta": -0.05,
+            "iv": 0.25,
+            "premium": 3.50,
         }
-        base.update(overrides)
-        return base
-
-    def test_from_entity_returns_options_data(self):
-        entity = self._make_entity()
         data = OptionsData.from_entity(entity)
         assert isinstance(data, OptionsData)
 
-    def test_from_entity_ticker(self):
-        entity = self._make_entity(ticker="AAPL", PartitionKey="AAPL")
+    def test_from_entity_sets_ticker_from_partition_key(self):
+        entity = {
+            "PartitionKey": "AAPL",
+            "RowKey": "2024-01-15T10:30:00Z",
+            "expiry": "2024-02-16",
+            "strike": 150.0,
+            "delta": 0.45,
+            "theta": -0.05,
+            "iv": 0.25,
+            "premium": 3.50,
+        }
         data = OptionsData.from_entity(entity)
         assert data.ticker == "AAPL"
 
-    def test_from_entity_timestamp(self):
-        ts = "2024-01-15T10:30:00Z"
-        entity = self._make_entity(timestamp=ts, RowKey=ts)
+    def test_from_entity_sets_timestamp_from_row_key(self):
+        entity = {
+            "PartitionKey": "AAPL",
+            "RowKey": "2024-01-15T10:30:00Z",
+            "expiry": "2024-02-16",
+            "strike": 150.0,
+            "delta": 0.45,
+            "theta": -0.05,
+            "iv": 0.25,
+            "premium": 3.50,
+        }
         data = OptionsData.from_entity(entity)
-        assert data.timestamp == ts
+        assert data.timestamp == "2024-01-15T10:30:00Z"
 
-    def test_from_entity_strike(self):
-        entity = self._make_entity(strike=175.5)
+    def test_from_entity_sets_all_fields(self):
+        entity = {
+            "PartitionKey": "AAPL",
+            "RowKey": "2024-01-15T10:30:00Z",
+            "expiry": "2024-02-16",
+            "strike": 150.0,
+            "delta": 0.45,
+            "theta": -0.05,
+            "iv": 0.25,
+            "premium": 3.50,
+        }
         data = OptionsData.from_entity(entity)
-        assert data.strike == 175.5
+        assert data.expiry == "2024-02-16"
+        assert data.strike == 150.0
+        assert data.delta == 0.45
+        assert data.theta == -0.05
+        assert data.iv == 0.25
+        assert data.premium == 3.50
 
-    def test_from_entity_option_type(self):
-        entity = self._make_entity(option_type="put")
-        data = OptionsData.from_entity(entity)
-        assert data.option_type == "put"
+    def test_from_entity_missing_partition_key_raises(self):
+        entity = {
+            "RowKey": "2024-01-15T10:30:00Z",
+            "expiry": "2024-02-16",
+            "strike": 150.0,
+            "delta": 0.45,
+            "theta": -0.05,
+            "iv": 0.25,
+            "premium": 3.50,
+        }
+        with pytest.raises((ValidationError, KeyError, ValueError)):
+            OptionsData.from_entity(entity)
 
-    def test_from_entity_volume(self):
-        entity = self._make_entity(volume=999)
-        data = OptionsData.from_entity(entity)
-        assert data.volume == 999
-
-    def test_from_entity_implied_volatility_none(self):
-        entity = self._make_entity(implied_volatility=None)
-        data = OptionsData.from_entity(entity)
-        assert data.implied_volatility is None
-
-    def test_from_entity_implied_volatility_missing(self):
-        entity = self._make_entity()
-        entity.pop("implied_volatility", None)
-        data = OptionsData.from_entity(entity)
-        assert data.implied_volatility is None
+    def test_from_entity_missing_row_key_raises(self):
+        entity = {
+            "PartitionKey": "AAPL",
+            "expiry": "2024-02-16",
+            "strike": 150.0,
+            "delta": 0.45,
+            "theta": -0.05,
+            "iv": 0.25,
+            "premium": 3.50,
+        }
+        with pytest.raises((ValidationError, KeyError, ValueError)):
+            OptionsData.from_entity(entity)
 
 
-# ---------------------------------------------------------------------------
-# Round-trip serialization
-# ---------------------------------------------------------------------------
-
-class TestRoundTrip:
-    def test_round_trip_basic(self):
-        original = OptionsData(**valid_kwargs())
+class TestOptionsDataRoundTrip:
+    def test_round_trip_to_entity_and_back(self):
+        original = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.25,
+            premium=3.50,
+        )
         entity = original.to_entity()
         restored = OptionsData.from_entity(entity)
+
         assert restored.ticker == original.ticker
         assert restored.timestamp == original.timestamp
+        assert restored.expiry == original.expiry
         assert restored.strike == original.strike
-        assert restored.option_type == original.option_type
+        assert restored.delta == original.delta
+        assert restored.theta == original.theta
+        assert restored.iv == original.iv
+        assert restored.premium == original.premium
 
-    def test_round_trip_bid_ask(self):
-        original = OptionsData(**valid_kwargs(bid=10.0, ask=10.5))
+    def test_round_trip_preserves_partition_and_row_keys(self):
+        original = OptionsData(
+            ticker="SPY",
+            timestamp="2024-03-01T09:00:00Z",
+            expiry="2024-04-19",
+            strike=500.0,
+            delta=0.50,
+            theta=-0.12,
+            iv=0.15,
+            premium=6.00,
+        )
         entity = original.to_entity()
         restored = OptionsData.from_entity(entity)
-        assert restored.bid == original.bid
-        assert restored.ask == original.ask
 
-    def test_round_trip_volume_open_interest(self):
-        original = OptionsData(**valid_kwargs(volume=250, open_interest=1250))
-        entity = original.to_entity()
-        restored = OptionsData.from_entity(entity)
-        assert restored.volume == original.volume
-        assert restored.open_interest == original.open_interest
-
-    def test_round_trip_implied_volatility(self):
-        original = OptionsData(**valid_kwargs(implied_volatility=0.45))
-        entity = original.to_entity()
-        restored = OptionsData.from_entity(entity)
-        assert restored.implied_volatility == original.implied_volatility
-
-    def test_round_trip_implied_volatility_none(self):
-        original = OptionsData(**valid_kwargs(implied_volatility=None))
-        entity = original.to_entity()
-        restored = OptionsData.from_entity(entity)
-        assert restored.implied_volatility is None
-
-    def test_round_trip_put_option(self):
-        original = OptionsData(**valid_kwargs(option_type="put"))
-        entity = original.to_entity()
-        restored = OptionsData.from_entity(entity)
-        assert restored.option_type == "put"
-
-    def test_round_trip_partition_and_row_keys_preserved(self):
-        original = OptionsData(**valid_kwargs(ticker="META", timestamp="2024-07-04T12:00:00Z"))
-        entity = original.to_entity()
-        restored = OptionsData.from_entity(entity)
         assert restored.PartitionKey == original.PartitionKey
         assert restored.RowKey == original.RowKey
 
-    def test_round_trip_expiration_date(self):
-        original = OptionsData(**valid_kwargs(expiration_date="2024-12-20"))
+    def test_round_trip_with_extreme_values(self):
+        original = OptionsData(
+            ticker="GME",
+            timestamp="2024-01-15T23:59:59Z",
+            expiry="2024-01-19",
+            strike=0.01,
+            delta=-1.0,
+            theta=-999.99,
+            iv=5.0,
+            premium=0.01,
+        )
         entity = original.to_entity()
         restored = OptionsData.from_entity(entity)
-        assert restored.expiration_date == original.expiration_date
+
+        assert restored.strike == original.strike
+        assert restored.delta == original.delta
+        assert restored.theta == original.theta
+        assert restored.iv == original.iv
+
+    def test_multiple_tickers_have_different_partition_keys(self):
+        tickers = ["AAPL", "MSFT", "GOOGL", "AMZN"]
+        entities = []
+        for ticker in tickers:
+            data = OptionsData(
+                ticker=ticker,
+                timestamp="2024-01-15T10:30:00Z",
+                expiry="2024-02-16",
+                strike=100.0,
+                delta=0.45,
+                theta=-0.05,
+                iv=0.25,
+                premium=3.50,
+            )
+            entities.append(data.to_entity())
+
+        partition_keys = [e["PartitionKey"] for e in entities]
+        assert len(set(partition_keys)) == len(tickers)
+
+    def test_same_ticker_different_timestamps_have_different_row_keys(self):
+        timestamps = [
+            "2024-01-15T10:00:00Z",
+            "2024-01-15T11:00:00Z",
+            "2024-01-15T12:00:00Z",
+        ]
+        entities = []
+        for ts in timestamps:
+            data = OptionsData(
+                ticker="AAPL",
+                timestamp=ts,
+                expiry="2024-02-16",
+                strike=150.0,
+                delta=0.45,
+                theta=-0.05,
+                iv=0.25,
+                premium=3.50,
+            )
+            entities.append(data.to_entity())
+
+        row_keys = [e["RowKey"] for e in entities]
+        assert len(set(row_keys)) == len(timestamps)
 
 
-# ---------------------------------------------------------------------------
-# Validation – ticker
-# ---------------------------------------------------------------------------
-
-class TestTickerValidation:
-    def test_empty_ticker_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(ticker=""))
-
-    def test_ticker_with_slash_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(ticker="AA/PL"))
-
-    def test_ticker_with_hash_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(ticker="AA#PL"))
-
-    def test_ticker_with_question_mark_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(ticker="AA?PL"))
-
-    def test_ticker_with_backslash_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(ticker="AA\\PL"))
-
-    def test_valid_ticker_with_dot(self):
-        # Some tickers like BRK.B are valid
-        data = OptionsData(**valid_kwargs(ticker="BRK.B"))
+class TestOptionsDataEdgeCases:
+    def test_ticker_with_numbers_is_valid(self):
+        data = OptionsData(
+            ticker="BRK.B",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=350.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.20,
+            premium=4.00,
+        )
         assert data.ticker == "BRK.B"
 
-    def test_valid_ticker_with_hyphen(self):
-        data = OptionsData(**valid_kwargs(ticker="BF-B"))
-        assert data.ticker == "BF-B"
+    def test_large_strike_price(self):
+        data = OptionsData(
+            ticker="AMZN",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=3500.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.30,
+            premium=50.0,
+        )
+        assert data.strike == 3500.0
 
+    def test_very_small_premium(self):
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.01,
+            theta=-0.001,
+            iv=0.25,
+            premium=0.01,
+        )
+        assert data.premium == 0.01
 
-# ---------------------------------------------------------------------------
-# Validation – timestamp / RowKey
-# ---------------------------------------------------------------------------
+    def test_negative_theta_is_valid(self):
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=-100.0,
+            iv=0.25,
+            premium=3.50,
+        )
+        assert data.theta == -100.0
 
-class TestTimestampValidation:
-    def test_empty_timestamp_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(timestamp=""))
+    def test_positive_theta_is_valid(self):
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=0.05,
+            iv=0.25,
+            premium=3.50,
+        )
+        assert data.theta == 0.05
 
-    def test_timestamp_with_slash_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(timestamp="2024/01/15T10:30:00Z"))
+    def test_model_is_immutable_after_creation(self):
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.25,
+            premium=3.50,
+        )
+        with pytest.raises(Exception):
+            data.ticker = "MSFT"
 
-    def test_timestamp_with_hash_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(timestamp="2024-01-15T10:30:00Z#extra"))
-
-    def test_timestamp_with_question_mark_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(timestamp="2024-01-15T10:30:00Z?q=1"))
-
-    def test_valid_iso_timestamp(self):
-        ts = "2024-01-15T10:30:00Z"
-        data = OptionsData(**valid_kwargs(timestamp=ts))
-        assert data.timestamp == ts
-
-
-# ---------------------------------------------------------------------------
-# Validation – option_type
-# ---------------------------------------------------------------------------
-
-class TestOptionTypeValidation:
-    def test_invalid_option_type_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(option_type="straddle"))
-
-    def test_invalid_option_type_numeric_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(option_type="1"))
-
-    def test_call_accepted(self):
-        data = OptionsData(**valid_kwargs(option_type="call"))
-        assert data.option_type == "call"
-
-    def test_put_accepted(self):
-        data = OptionsData(**valid_kwargs(option_type="put"))
-        assert data.option_type == "put"
-
-
-# ---------------------------------------------------------------------------
-# Validation – numeric fields
-# ---------------------------------------------------------------------------
-
-class TestNumericFieldValidation:
-    def test_negative_strike_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(strike=-1.0))
-
-    def test_zero_strike_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(strike=0.0))
-
-    def test_negative_bid_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(bid=-0.01))
-
-    def test_negative_ask_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(ask=-0.01))
-
-    def test_negative_volume_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(volume=-1))
-
-    def test_negative_open_interest_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(open_interest=-1))
-
-    def test_negative_implied_volatility_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(implied_volatility=-0.01))
-
-    def test_implied_volatility_above_one_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(implied_volatility=1.01))
-
-    def test_implied_volatility_exactly_one_accepted(self):
-        data = OptionsData(**valid_kwargs(implied_volatility=1.0))
-        assert data.implied_volatility == 1.0
-
-    def test_implied_volatility_zero_accepted(self):
-        data = OptionsData(**valid_kwargs(implied_volatility=0.0))
-        assert data.implied_volatility == 0.0
-
-    def test_bid_zero_accepted(self):
-        data = OptionsData(**valid_kwargs(bid=0.0))
-        assert data.bid == 0.0
-
-    def test_ask_zero_accepted(self):
-        data = OptionsData(**valid_kwargs(ask=0.0))
-        assert data.ask == 0.0
-
-
-# ---------------------------------------------------------------------------
-# Validation – expiration_date
-# ---------------------------------------------------------------------------
-
-class TestExpirationDateValidation:
-    def test_valid_expiration_date(self):
-        data = OptionsData(**valid_kwargs(expiration_date="2024-12-20"))
-        assert data.expiration_date == "2024-12-20"
-
-    def test_invalid_expiration_date_format_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(expiration_date="20241220"))
-
-    def test_empty_expiration_date_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(expiration_date=""))
-
-    def test_expiration_date_with_slash_rejected(self):
-        with pytest.raises(ValidationError):
-            OptionsData(**valid_kwargs(expiration_date="2024/12/20"))
-
-
-# ---------------------------------------------------------------------------
-# Model fields presence
-# ---------------------------------------------------------------------------
-
-class TestModelFields:
-    def test_model_has_ticker_field(self):
-        assert "ticker" in OptionsData.model_fields
-
-    def test_model_has_timestamp_field(self):
-        assert "timestamp" in OptionsData.model_fields
-
-    def test_model_has_expiration_date_field(self):
-        assert "expiration_date" in OptionsData.model_fields
-
-    def test_model_has_strike_field(self):
-        assert "strike" in OptionsData.model_fields
-
-    def test_model_has_option_type_field(self):
-        assert "option_type" in OptionsData.model_fields
-
-    def test_model_has_bid_field(self):
-        assert "bid" in OptionsData.model_fields
-
-    def test_model_has_ask_field(self):
-        assert "ask" in OptionsData.model_fields
-
-    def test_model_has_last_price_field(self):
-        assert "last_price" in OptionsData.model_fields
-
-    def test_model_has_volume_field(self):
-        assert "volume" in OptionsData.model_fields
-
-    def test_model_has_open_interest_field(self):
-        assert "open_interest" in OptionsData.model_fields
-
-    def test_model_has_implied_volatility_field(self):
-        assert "implied_volatility" in OptionsData.model_fields
+    def test_to_entity_returns_new_dict_each_call(self):
+        data = OptionsData(
+            ticker="AAPL",
+            timestamp="2024-01-15T10:30:00Z",
+            expiry="2024-02-16",
+            strike=150.0,
+            delta=0.45,
+            theta=-0.05,
+            iv=0.25,
+            premium=3.50,
+        )
+        entity1 = data.to_entity()
+        entity2 = data.to_entity()
+        assert entity1 is not entity2
+        assert entity1 == entity2
