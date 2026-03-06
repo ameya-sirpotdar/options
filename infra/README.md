@@ -1,6 +1,6 @@
-# Infrastructure – Azure Cloud Resources
+# Infrastructure – Azure Provisioning
 
-This directory contains the Infrastructure-as-Code (IaC) for provisioning all Azure cloud resources required by the project, implemented with [Azure Bicep](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/overview).
+This directory contains the Infrastructure as Code (IaC) for provisioning all Azure cloud resources required by the project. Resources are defined using [Bicep](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/overview), Microsoft's domain-specific language for Azure Resource Manager (ARM) templates.
 
 ---
 
@@ -9,12 +9,12 @@ This directory contains the Infrastructure-as-Code (IaC) for provisioning all Az
 ```
 infra/
 ├── bicep/
-│   ├── main.bicep                  # Subscription-scope entry point
-│   ├── main.bicepparam.example     # Example parameters file (copy to main.bicepparam)
-│   ├── .gitignore                  # Prevents committing real parameter files
+│   ├── main.bicep                  # Subscription-scoped entry point; creates resource group and calls modules
+│   ├── main.bicepparam.example     # Safe example parameter file (commit-safe, no secrets)
+│   ├── .gitignore                  # Protects real .bicepparam files from accidental commits
 │   └── modules/
-│       ├── aks.bicep               # Azure Kubernetes Service cluster
-│       └── storage.bicep           # Azure Storage account + tables
+│       ├── aks.bicep               # Azure Kubernetes Service cluster definition
+│       └── storage.bicep           # Azure Storage account and Table Storage definition
 └── README.md                       # This file
 ```
 
@@ -23,7 +23,7 @@ infra/
 ## Resources Provisioned
 
 ### Resource Group
-A dedicated resource group is created at the subscription scope to contain all project resources.
+A dedicated Azure Resource Group is created at the subscription scope to contain all project resources.
 
 ### Azure Kubernetes Service (AKS) – `modules/aks.bicep`
 | Property | Value |
@@ -32,7 +32,7 @@ A dedicated resource group is created at the subscription scope to contain all p
 | Node VM size | `Standard_B2s` |
 | Kubernetes version | Latest stable (resolved at deploy time) |
 | Network plugin | `kubenet` |
-| Identity | System-assigned managed identity |
+| Identity type | `SystemAssigned` |
 
 ### Azure Storage Account – `modules/storage.bicep`
 | Property | Value |
@@ -40,17 +40,17 @@ A dedicated resource group is created at the subscription scope to contain all p
 | SKU | `Standard_LRS` |
 | Kind | `StorageV2` |
 | Access tier | `Hot` |
-| TLS | Minimum TLS 1.2 |
-| Public blob access | Disabled |
+| TLS minimum version | `TLS1_2` |
+| HTTPS only | `true` |
 
-#### Storage Tables
-The following Azure Storage Tables are created automatically:
+#### Table Storage Tables
+The following tables are created within the Storage Account:
 
-| Table name | Purpose |
+| Table Name | Purpose |
 |---|---|
-| `optionsdata` | Raw options chain data ingested from market feeds |
-| `sentimentdata` | Processed sentiment scores and signals |
-| `runlogs` | Pipeline execution logs and audit trail |
+| `optionsdata` | Stores raw and processed options chain data |
+| `sentimentdata` | Stores sentiment analysis results |
+| `runlogs` | Stores pipeline execution logs and audit records |
 
 ---
 
@@ -58,21 +58,23 @@ The following Azure Storage Tables are created automatically:
 
 Before deploying, ensure you have the following installed and configured:
 
-1. **Azure CLI** ≥ 2.50.0  
+1. **Azure CLI** – [Install guide](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
    ```bash
-   az --version
+   az --version   # Verify installation
    ```
 
-2. **Bicep CLI** (installed automatically with a recent Azure CLI, or manually)  
+2. **Bicep CLI** – Installed automatically with a recent Azure CLI, or manually:
    ```bash
    az bicep install
-   az bicep version
+   az bicep version   # Verify installation
    ```
 
-3. **An active Azure subscription** with sufficient permissions:
-   - `Contributor` or `Owner` at the **subscription** scope (required because `main.bicep` deploys at subscription scope to create the resource group)
+3. **Azure Subscription** – You must have an active Azure subscription and sufficient permissions to:
+   - Create Resource Groups (requires `Contributor` or `Owner` at subscription scope)
+   - Create AKS clusters
+   - Create Storage Accounts
 
-4. **Logged in to Azure CLI**  
+4. **Authenticated Azure CLI session**:
    ```bash
    az login
    az account set --subscription "<your-subscription-id>"
@@ -82,116 +84,93 @@ Before deploying, ensure you have the following installed and configured:
 
 ## Configuration
 
-### 1. Create your parameters file
+### Parameter File
 
-Copy the example parameters file and fill in your values:
+A safe example parameter file is provided at `infra/bicep/main.bicepparam.example`. Copy it and fill in your values:
 
 ```bash
 cp infra/bicep/main.bicepparam.example infra/bicep/main.bicepparam
 ```
 
-Edit `infra/bicep/main.bicepparam` with your environment-specific values:
+Then edit `infra/bicep/main.bicepparam` with your environment-specific values:
 
 ```bicep
 using './main.bicep'
 
-param location         = 'eastus'
-param resourceGroupName = 'rg-myproject-prod'
-param aksClusterName   = 'aks-myproject-prod'
-param storageAccountName = 'stmyprojectprod'
-param environment      = 'prod'
+param location = 'eastus'
+param resourceGroupName = 'rg-your-project-name'
+param aksClusterName = 'aks-your-project-name'
+param storageAccountName = 'styourprojectname'
 ```
 
-> **Important:** `main.bicepparam` is listed in `.gitignore` and must **never** be committed to source control, as it may contain environment-specific or sensitive values.
+> **Important:** The real `main.bicepparam` file is listed in `infra/bicep/.gitignore` and must **never** be committed to source control. It may contain sensitive or environment-specific values.
 
 ### Parameter Reference
 
 | Parameter | Type | Description | Example |
 |---|---|---|---|
-| `location` | string | Azure region for all resources | `eastus` |
-| `resourceGroupName` | string | Name of the resource group to create | `rg-myproject-prod` |
-| `aksClusterName` | string | Name of the AKS cluster | `aks-myproject-prod` |
-| `storageAccountName` | string | Globally unique storage account name (3–24 lowercase alphanumeric) | `stmyprojectprod` |
-| `environment` | string | Environment tag applied to all resources (`dev`, `staging`, `prod`) | `prod` |
+| `location` | `string` | Azure region for all resources | `eastus` |
+| `resourceGroupName` | `string` | Name of the resource group to create | `rg-myproject-prod` |
+| `aksClusterName` | `string` | Name of the AKS cluster | `aks-myproject-prod` |
+| `storageAccountName` | `string` | Globally unique storage account name (3–24 lowercase alphanumeric) | `stmyprojectprod` |
 
 ---
 
 ## Deployment
 
-All commands below are run from the **repository root**.
+### Full Deployment (Recommended)
 
-### Deploy (create or update)
+Deploy everything from the repository root using a single command. The deployment targets **subscription scope** so that the resource group can be created as part of the deployment:
 
 ```bash
 az deployment sub create \
-  --name "provision-$(date +%Y%m%d%H%M%S)" \
-  --location eastus \
+  --name "project-infra-deployment" \
+  --location "eastus" \
   --template-file infra/bicep/main.bicep \
   --parameters infra/bicep/main.bicepparam
 ```
 
-### What-if (dry run – preview changes without deploying)
+### What-If (Dry Run)
+
+Preview all changes before applying them:
 
 ```bash
 az deployment sub what-if \
-  --location eastus \
+  --name "project-infra-deployment" \
+  --location "eastus" \
   --template-file infra/bicep/main.bicep \
   --parameters infra/bicep/main.bicepparam
 ```
 
-### Validate (syntax and schema check only)
+### Validate Only
+
+Validate the template and parameters without deploying:
 
 ```bash
 az deployment sub validate \
-  --location eastus \
+  --name "project-infra-deployment" \
+  --location "eastus" \
   --template-file infra/bicep/main.bicep \
   --parameters infra/bicep/main.bicepparam
 ```
 
 ---
 
-## Outputs
+## Post-Deployment
 
-After a successful deployment the following values are emitted as deployment outputs and can be retrieved with:
+### Connect to AKS
 
-```bash
-az deployment sub show \
-  --name "<deployment-name>" \
-  --query properties.outputs
-```
-
-| Output | Description |
-|---|---|
-| `aksClusterName` | Name of the provisioned AKS cluster |
-| `aksResourceId` | Full Azure resource ID of the AKS cluster |
-| `storageAccountName` | Name of the provisioned storage account |
-| `storageAccountId` | Full Azure resource ID of the storage account |
-| `resourceGroupName` | Name of the resource group that was created |
-
----
-
-## Connecting to the AKS Cluster
-
-After deployment, merge the cluster credentials into your local `kubeconfig`:
+After a successful deployment, configure `kubectl` to connect to the new cluster:
 
 ```bash
 az aks get-credentials \
   --resource-group "<resourceGroupName>" \
-  --name "<aksClusterName>" \
-  --overwrite-existing
+  --name "<aksClusterName>"
+
+kubectl get nodes   # Verify connectivity; expect 2 nodes in Ready state
 ```
 
-Verify connectivity:
-
-```bash
-kubectl get nodes
-```
-
----
-
-## Accessing Storage Tables
-
-Retrieve the storage account connection string (for local development only – prefer managed identity in production):
+### Retrieve Storage Account Connection String
 
 ```bash
 az storage account show-connection-string \
@@ -201,7 +180,9 @@ az storage account show-connection-string \
   --output tsv
 ```
 
-List tables to confirm they were created:
+Store this connection string securely (e.g., in Azure Key Vault or as a Kubernetes Secret) for use by application workloads.
+
+### Verify Tables Exist
 
 ```bash
 az storage table list \
@@ -209,11 +190,13 @@ az storage table list \
   --output table
 ```
 
+Expected output includes: `optionsdata`, `sentimentdata`, `runlogs`.
+
 ---
 
 ## Teardown
 
-> **Warning:** This will permanently delete the resource group and **all resources** inside it.
+To remove all provisioned resources, delete the resource group:
 
 ```bash
 az group delete \
@@ -222,40 +205,13 @@ az group delete \
   --no-wait
 ```
 
----
-
-## CI/CD Integration
-
-For automated deployments (e.g., GitHub Actions), store the following as repository secrets:
-
-| Secret | Description |
-|---|---|
-| `AZURE_CREDENTIALS` | Service principal JSON (`az ad sp create-for-rbac --sdk-auth`) |
-| `AZURE_SUBSCRIPTION_ID` | Target subscription ID |
-
-Example GitHub Actions step:
-
-```yaml
-- name: Deploy Bicep infrastructure
-  uses: azure/arm-deploy@v1
-  with:
-    scope: subscription
-    subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-    region: eastus
-    template: infra/bicep/main.bicep
-    parameters: >
-      location=eastus
-      resourceGroupName=rg-myproject-prod
-      aksClusterName=aks-myproject-prod
-      storageAccountName=stmyprojectprod
-      environment=prod
-```
+> **Warning:** This permanently deletes all resources within the resource group, including the AKS cluster and all data in Table Storage. This action cannot be undone.
 
 ---
 
-## Security Notes
+## Notes
 
-- Real parameter files (`*.bicepparam`, excluding `*.example`) are excluded from version control via `.gitignore`.
-- The storage account is configured with `allowBlobPublicAccess: false` and minimum TLS 1.2.
-- AKS uses a system-assigned managed identity; avoid using service principals with long-lived credentials where possible.
-- Apply the principle of least privilege when assigning roles to the AKS managed identity and any CI/CD service principals.
+- All Bicep modules are **idempotent**: re-running the deployment will update existing resources to match the template rather than creating duplicates.
+- The AKS cluster uses a `SystemAssigned` managed identity, eliminating the need to manage service principal credentials.
+- Storage account names must be **globally unique** across all of Azure. If deployment fails with a name conflict, choose a different value for `storageAccountName`.
+- The `Standard_B2s` VM size is cost-optimised for development and staging workloads. For production, consider upgrading to a burstable or dedicated compute tier.
