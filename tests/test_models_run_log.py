@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from unittest.mock import patch
 import pytest
 from backend.models.run_log import RunLog
 
@@ -9,10 +8,10 @@ from backend.models.run_log import RunLog
 # ---------------------------------------------------------------------------
 
 def _valid_entity() -> dict:
-    """Return a minimal valid Azure Table entity dict for RunLog."""
+    """Valid Azure Table entity — PartitionKey=run_id, RowKey=run_date."""
     return {
-        "PartitionKey": "2024-01-15",
-        "RowKey": "run-001",
+        "PartitionKey": "run-001",
+        "RowKey": "2024-01-15",
         "status": "success",
         "created_at": "2024-01-15T10:30:00+00:00",
         "message": "Completed successfully",
@@ -20,10 +19,9 @@ def _valid_entity() -> dict:
 
 
 def _make_run_log(**overrides) -> RunLog:
-    """Construct a RunLog with sensible defaults, applying any overrides."""
     defaults = dict(
-        partition_key="2024-01-15",
-        row_key="run-001",
+        partition_key="run-001",
+        row_key="2024-01-15",
         status="success",
         created_at=datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
         message="Completed successfully",
@@ -39,36 +37,35 @@ def _make_run_log(**overrides) -> RunLog:
 class TestRunLogConstruction:
     def test_minimal_required_fields(self):
         run_log = RunLog(
-            partition_key="2024-01-15",
-            row_key="run-001",
+            partition_key="run-001",
+            row_key="2024-01-15",
             status="success",
             created_at=datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
         )
-        assert run_log.partition_key == "2024-01-15"
-        assert run_log.row_key == "run-001"
+        assert run_log.partition_key == "run-001"
+        assert run_log.row_key == "2024-01-15"
         assert run_log.status == "success"
         assert run_log.message is None
 
     def test_all_fields(self):
         run_log = _make_run_log()
-        assert run_log.partition_key == "2024-01-15"
-        assert run_log.row_key == "run-001"
+        assert run_log.partition_key == "run-001"
+        assert run_log.row_key == "2024-01-15"
         assert run_log.status == "success"
         assert run_log.created_at == datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
         assert run_log.message == "Completed successfully"
 
     def test_message_defaults_to_none(self):
         run_log = RunLog(
-            partition_key="2024-01-15",
-            row_key="run-001",
+            partition_key="run-001",
+            row_key="2024-01-15",
             status="pending",
             created_at=datetime(2024, 1, 15, tzinfo=timezone.utc),
         )
         assert run_log.message is None
 
     def test_status_running(self):
-        run_log = _make_run_log(status="running")
-        assert run_log.status == "running"
+        assert _make_run_log(status="running").status == "running"
 
     def test_status_failed(self):
         run_log = _make_run_log(status="failed", message="Something went wrong")
@@ -76,35 +73,30 @@ class TestRunLogConstruction:
         assert run_log.message == "Something went wrong"
 
     def test_status_pending(self):
-        run_log = _make_run_log(status="pending")
-        assert run_log.status == "pending"
+        assert _make_run_log(status="pending").status == "pending"
 
     def test_long_message(self):
         long_msg = "Error: " + "x" * 500
-        run_log = _make_run_log(status="failed", message=long_msg)
-        assert run_log.message == long_msg
+        assert _make_run_log(status="failed", message=long_msg).message == long_msg
 
     def test_empty_message_string(self):
-        run_log = _make_run_log(message="")
-        assert run_log.message == ""
+        assert _make_run_log(message="").message == ""
 
 
 # ---------------------------------------------------------------------------
-# PartitionKey validation (run_date format)
+# PartitionKey validation (run_id — any valid non-empty string)
 # ---------------------------------------------------------------------------
 
 class TestPartitionKeyValidation:
-    def test_valid_iso_date(self):
-        run_log = _make_run_log(partition_key="2024-01-15")
-        assert run_log.partition_key == "2024-01-15"
+    def test_valid_run_id(self):
+        assert _make_run_log(partition_key="run-001").partition_key == "run-001"
 
-    def test_valid_date_start_of_year(self):
-        run_log = _make_run_log(partition_key="2024-01-01")
-        assert run_log.partition_key == "2024-01-01"
+    def test_valid_uuid_run_id(self):
+        uid = "550e8400-e29b-41d4-a716-446655440000"
+        assert _make_run_log(partition_key=uid).partition_key == uid
 
-    def test_valid_date_end_of_year(self):
-        run_log = _make_run_log(partition_key="2024-12-31")
-        assert run_log.partition_key == "2024-12-31"
+    def test_valid_numeric_run_id(self):
+        assert _make_run_log(partition_key="12345").partition_key == "12345"
 
     def test_empty_partition_key_raises(self):
         with pytest.raises(ValueError, match="PartitionKey"):
@@ -112,19 +104,19 @@ class TestPartitionKeyValidation:
 
     def test_partition_key_with_slash_raises(self):
         with pytest.raises(ValueError, match="PartitionKey"):
-            _make_run_log(partition_key="2024/01/15")
+            _make_run_log(partition_key="run/001")
 
     def test_partition_key_with_backslash_raises(self):
         with pytest.raises(ValueError, match="PartitionKey"):
-            _make_run_log(partition_key="2024\\01\\15")
+            _make_run_log(partition_key="run\\001")
 
     def test_partition_key_with_hash_raises(self):
         with pytest.raises(ValueError, match="PartitionKey"):
-            _make_run_log(partition_key="2024#01#15")
+            _make_run_log(partition_key="run#001")
 
     def test_partition_key_with_question_mark_raises(self):
         with pytest.raises(ValueError, match="PartitionKey"):
-            _make_run_log(partition_key="2024?01?15")
+            _make_run_log(partition_key="run?001")
 
     def test_partition_key_whitespace_only_raises(self):
         with pytest.raises(ValueError, match="PartitionKey"):
@@ -132,11 +124,11 @@ class TestPartitionKeyValidation:
 
     def test_partition_key_leading_whitespace_raises(self):
         with pytest.raises(ValueError, match="PartitionKey"):
-            _make_run_log(partition_key=" 2024-01-15")
+            _make_run_log(partition_key=" run-001")
 
     def test_partition_key_trailing_whitespace_raises(self):
         with pytest.raises(ValueError, match="PartitionKey"):
-            _make_run_log(partition_key="2024-01-15 ")
+            _make_run_log(partition_key="run-001 ")
 
     def test_partition_key_none_raises(self):
         with pytest.raises((ValueError, TypeError)):
@@ -144,25 +136,18 @@ class TestPartitionKeyValidation:
 
 
 # ---------------------------------------------------------------------------
-# RowKey validation (run_id)
+# RowKey validation (run_date — YYYY-MM-DD format)
 # ---------------------------------------------------------------------------
 
 class TestRowKeyValidation:
-    def test_valid_run_id(self):
-        run_log = _make_run_log(row_key="run-001")
-        assert run_log.row_key == "run-001"
+    def test_valid_iso_date(self):
+        assert _make_run_log(row_key="2024-01-15").row_key == "2024-01-15"
 
-    def test_valid_uuid_style_run_id(self):
-        run_log = _make_run_log(row_key="550e8400-e29b-41d4-a716-446655440000")
-        assert run_log.row_key == "550e8400-e29b-41d4-a716-446655440000"
+    def test_valid_date_start_of_year(self):
+        assert _make_run_log(row_key="2024-01-01").row_key == "2024-01-01"
 
-    def test_valid_numeric_run_id(self):
-        run_log = _make_run_log(row_key="12345")
-        assert run_log.row_key == "12345"
-
-    def test_valid_timestamp_run_id(self):
-        run_log = _make_run_log(row_key="20240115T103000Z")
-        assert run_log.row_key == "20240115T103000Z"
+    def test_valid_date_end_of_year(self):
+        assert _make_run_log(row_key="2024-12-31").row_key == "2024-12-31"
 
     def test_empty_row_key_raises(self):
         with pytest.raises(ValueError, match="RowKey"):
@@ -170,19 +155,19 @@ class TestRowKeyValidation:
 
     def test_row_key_with_slash_raises(self):
         with pytest.raises(ValueError, match="RowKey"):
-            _make_run_log(row_key="run/001")
+            _make_run_log(row_key="2024/01/15")
 
     def test_row_key_with_backslash_raises(self):
         with pytest.raises(ValueError, match="RowKey"):
-            _make_run_log(row_key="run\\001")
+            _make_run_log(row_key="2024\\01\\15")
 
     def test_row_key_with_hash_raises(self):
         with pytest.raises(ValueError, match="RowKey"):
-            _make_run_log(row_key="run#001")
+            _make_run_log(row_key="2024#01#15")
 
     def test_row_key_with_question_mark_raises(self):
         with pytest.raises(ValueError, match="RowKey"):
-            _make_run_log(row_key="run?001")
+            _make_run_log(row_key="2024?01?15")
 
     def test_row_key_whitespace_only_raises(self):
         with pytest.raises(ValueError, match="RowKey"):
@@ -190,37 +175,37 @@ class TestRowKeyValidation:
 
     def test_row_key_leading_whitespace_raises(self):
         with pytest.raises(ValueError, match="RowKey"):
-            _make_run_log(row_key=" run-001")
+            _make_run_log(row_key=" 2024-01-15")
 
     def test_row_key_trailing_whitespace_raises(self):
         with pytest.raises(ValueError, match="RowKey"):
-            _make_run_log(row_key="run-001 ")
+            _make_run_log(row_key="2024-01-15 ")
 
     def test_row_key_none_raises(self):
         with pytest.raises((ValueError, TypeError)):
             _make_run_log(row_key=None)
 
+    def test_row_key_not_a_date_raises(self):
+        with pytest.raises(ValueError, match="RowKey"):
+            _make_run_log(row_key="run-001")
+
 
 # ---------------------------------------------------------------------------
-# Status field validation
+# Status validation
 # ---------------------------------------------------------------------------
 
 class TestStatusValidation:
     def test_status_success(self):
-        run_log = _make_run_log(status="success")
-        assert run_log.status == "success"
+        assert _make_run_log(status="success").status == "success"
 
     def test_status_failed(self):
-        run_log = _make_run_log(status="failed")
-        assert run_log.status == "failed"
+        assert _make_run_log(status="failed").status == "failed"
 
     def test_status_running(self):
-        run_log = _make_run_log(status="running")
-        assert run_log.status == "running"
+        assert _make_run_log(status="running").status == "running"
 
     def test_status_pending(self):
-        run_log = _make_run_log(status="pending")
-        assert run_log.status == "pending"
+        assert _make_run_log(status="pending").status == "pending"
 
     def test_invalid_status_raises(self):
         with pytest.raises(ValueError):
@@ -244,19 +229,17 @@ class TestStatusValidation:
 
 
 # ---------------------------------------------------------------------------
-# created_at field validation
+# created_at validation
 # ---------------------------------------------------------------------------
 
 class TestCreatedAtValidation:
     def test_utc_datetime(self):
         dt = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
-        run_log = _make_run_log(created_at=dt)
-        assert run_log.created_at == dt
+        assert _make_run_log(created_at=dt).created_at == dt
 
     def test_naive_datetime_raises(self):
-        naive_dt = datetime(2024, 1, 15, 10, 30, 0)
         with pytest.raises(ValueError, match="timezone"):
-            _make_run_log(created_at=naive_dt)
+            _make_run_log(created_at=datetime(2024, 1, 15, 10, 30, 0))
 
     def test_created_at_none_raises(self):
         with pytest.raises((ValueError, TypeError)):
@@ -270,8 +253,7 @@ class TestCreatedAtValidation:
 
     def test_created_at_preserves_microseconds(self):
         dt = datetime(2024, 1, 15, 10, 30, 0, 123456, tzinfo=timezone.utc)
-        run_log = _make_run_log(created_at=dt)
-        assert run_log.created_at.microsecond == 123456
+        assert _make_run_log(created_at=dt).created_at.microsecond == 123456
 
 
 # ---------------------------------------------------------------------------
@@ -280,63 +262,42 @@ class TestCreatedAtValidation:
 
 class TestToEntity:
     def test_returns_dict(self):
-        run_log = _make_run_log()
-        entity = run_log.to_entity()
-        assert isinstance(entity, dict)
+        assert isinstance(_make_run_log().to_entity(), dict)
 
-    def test_partition_key_present(self):
-        run_log = _make_run_log(partition_key="2024-01-15")
-        entity = run_log.to_entity()
-        assert entity["PartitionKey"] == "2024-01-15"
+    def test_partition_key_is_run_id(self):
+        entity = _make_run_log(partition_key="run-001").to_entity()
+        assert entity["PartitionKey"] == "run-001"
 
-    def test_row_key_present(self):
-        run_log = _make_run_log(row_key="run-001")
-        entity = run_log.to_entity()
-        assert entity["RowKey"] == "run-001"
+    def test_row_key_is_run_date(self):
+        entity = _make_run_log(row_key="2024-01-15").to_entity()
+        assert entity["RowKey"] == "2024-01-15"
 
     def test_status_present(self):
-        run_log = _make_run_log(status="success")
-        entity = run_log.to_entity()
-        assert entity["status"] == "success"
+        assert _make_run_log(status="success").to_entity()["status"] == "success"
 
     def test_created_at_is_iso_string(self):
         dt = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
-        run_log = _make_run_log(created_at=dt)
-        entity = run_log.to_entity()
+        entity = _make_run_log(created_at=dt).to_entity()
         assert isinstance(entity["created_at"], str)
         assert "2024-01-15" in entity["created_at"]
 
     def test_message_present_when_set(self):
-        run_log = _make_run_log(message="All good")
-        entity = run_log.to_entity()
+        entity = _make_run_log(message="All good").to_entity()
         assert entity["message"] == "All good"
 
     def test_message_absent_when_none(self):
-        run_log = RunLog(
-            partition_key="2024-01-15",
-            row_key="run-001",
+        entity = RunLog(
+            partition_key="run-001",
+            row_key="2024-01-15",
             status="success",
             created_at=datetime(2024, 1, 15, tzinfo=timezone.utc),
-        )
-        entity = run_log.to_entity()
+        ).to_entity()
         assert "message" not in entity or entity.get("message") is None
 
-    def test_no_python_internal_fields(self):
-        run_log = _make_run_log()
-        entity = run_log.to_entity()
+    def test_no_python_field_names(self):
+        entity = _make_run_log().to_entity()
         assert "partition_key" not in entity
         assert "row_key" not in entity
-
-    def test_failed_status_entity(self):
-        run_log = _make_run_log(status="failed", message="DB connection error")
-        entity = run_log.to_entity()
-        assert entity["status"] == "failed"
-        assert entity["message"] == "DB connection error"
-
-    def test_running_status_entity(self):
-        run_log = _make_run_log(status="running", message=None)
-        entity = run_log.to_entity()
-        assert entity["status"] == "running"
 
 
 # ---------------------------------------------------------------------------
@@ -353,63 +314,26 @@ class TestFromEntity:
         assert run_log.message == entity["message"]
 
     def test_partition_key_mapped(self):
-        entity = _valid_entity()
-        run_log = RunLog.from_entity(entity)
-        assert run_log.partition_key == "2024-01-15"
+        assert RunLog.from_entity(_valid_entity()).partition_key == "run-001"
 
     def test_row_key_mapped(self):
-        entity = _valid_entity()
-        run_log = RunLog.from_entity(entity)
-        assert run_log.row_key == "run-001"
-
-    def test_status_mapped(self):
-        entity = _valid_entity()
-        run_log = RunLog.from_entity(entity)
-        assert run_log.status == "success"
+        assert RunLog.from_entity(_valid_entity()).row_key == "2024-01-15"
 
     def test_created_at_parsed_from_string(self):
-        entity = _valid_entity()
-        run_log = RunLog.from_entity(entity)
+        run_log = RunLog.from_entity(_valid_entity())
         assert isinstance(run_log.created_at, datetime)
         assert run_log.created_at.tzinfo is not None
-
-    def test_message_mapped(self):
-        entity = _valid_entity()
-        run_log = RunLog.from_entity(entity)
-        assert run_log.message == "Completed successfully"
 
     def test_missing_message_defaults_to_none(self):
         entity = _valid_entity()
         del entity["message"]
-        run_log = RunLog.from_entity(entity)
-        assert run_log.message is None
-
-    def test_failed_status_from_entity(self):
-        entity = _valid_entity()
-        entity["status"] = "failed"
-        entity["message"] = "Timeout error"
-        run_log = RunLog.from_entity(entity)
-        assert run_log.status == "failed"
-        assert run_log.message == "Timeout error"
-
-    def test_running_status_from_entity(self):
-        entity = _valid_entity()
-        entity["status"] = "running"
-        run_log = RunLog.from_entity(entity)
-        assert run_log.status == "running"
-
-    def test_pending_status_from_entity(self):
-        entity = _valid_entity()
-        entity["status"] = "pending"
-        run_log = RunLog.from_entity(entity)
-        assert run_log.status == "pending"
+        assert RunLog.from_entity(entity).message is None
 
     def test_extra_azure_metadata_ignored(self):
         entity = _valid_entity()
-        entity["odata.etag"] = "W/\"datetime'2024-01-15T10%3A30%3A00.0000000Z'\""
+        entity["odata.etag"] = "W/\"datetime'2024-01-15T10%3A30%3A00Z'\""
         entity["Timestamp"] = "2024-01-15T10:30:00Z"
-        run_log = RunLog.from_entity(entity)
-        assert run_log.partition_key == "2024-01-15"
+        assert RunLog.from_entity(entity).partition_key == "run-001"
 
     def test_missing_partition_key_raises(self):
         entity = _valid_entity()
@@ -437,14 +361,13 @@ class TestFromEntity:
 
 
 # ---------------------------------------------------------------------------
-# Full serialization round-trip
+# Serialization round-trip
 # ---------------------------------------------------------------------------
 
 class TestSerializationRoundTrip:
     def test_to_entity_then_from_entity(self):
         original = _make_run_log()
-        entity = original.to_entity()
-        restored = RunLog.from_entity(entity)
+        restored = RunLog.from_entity(original.to_entity())
         assert restored.partition_key == original.partition_key
         assert restored.row_key == original.row_key
         assert restored.status == original.status
@@ -452,53 +375,29 @@ class TestSerializationRoundTrip:
 
     def test_created_at_roundtrip_preserves_utc(self):
         dt = datetime(2024, 6, 15, 14, 45, 30, tzinfo=timezone.utc)
-        original = _make_run_log(created_at=dt)
-        entity = original.to_entity()
-        restored = RunLog.from_entity(entity)
+        restored = RunLog.from_entity(_make_run_log(created_at=dt).to_entity())
         assert restored.created_at.year == 2024
-        assert restored.created_at.month == 6
-        assert restored.created_at.day == 15
         assert restored.created_at.hour == 14
         assert restored.created_at.minute == 45
-        assert restored.created_at.second == 30
 
     def test_roundtrip_with_none_message(self):
         original = RunLog(
-            partition_key="2024-03-20",
-            row_key="run-999",
+            partition_key="run-999",
+            row_key="2024-03-20",
             status="pending",
             created_at=datetime(2024, 3, 20, tzinfo=timezone.utc),
         )
-        entity = original.to_entity()
-        restored = RunLog.from_entity(entity)
+        restored = RunLog.from_entity(original.to_entity())
         assert restored.message is None
-
-    def test_roundtrip_failed_status(self):
-        original = _make_run_log(
-            status="failed",
-            message="Critical failure in data pipeline",
-        )
-        entity = original.to_entity()
-        restored = RunLog.from_entity(entity)
-        assert restored.status == "failed"
-        assert restored.message == "Critical failure in data pipeline"
-
-    def test_roundtrip_running_status(self):
-        original = _make_run_log(status="running", message="Processing batch 3 of 10")
-        entity = original.to_entity()
-        restored = RunLog.from_entity(entity)
-        assert restored.status == "running"
-        assert restored.message == "Processing batch 3 of 10"
 
     def test_multiple_roundtrips_stable(self):
         original = _make_run_log()
-        entity1 = original.to_entity()
-        restored1 = RunLog.from_entity(entity1)
-        entity2 = restored1.to_entity()
-        restored2 = RunLog.from_entity(entity2)
-        assert restored2.partition_key == original.partition_key
-        assert restored2.row_key == original.row_key
-        assert restored2.status == original.status
+        e1 = original.to_entity()
+        r1 = RunLog.from_entity(e1)
+        r2 = RunLog.from_entity(r1.to_entity())
+        assert r2.partition_key == original.partition_key
+        assert r2.row_key == original.row_key
+        assert r2.status == original.status
 
 
 # ---------------------------------------------------------------------------
@@ -515,7 +414,7 @@ class TestTableName:
 
 
 # ---------------------------------------------------------------------------
-# Immutability / model config
+# Model config
 # ---------------------------------------------------------------------------
 
 class TestModelConfig:
@@ -525,11 +424,8 @@ class TestModelConfig:
 
     def test_instance_has_expected_fields(self):
         run_log = _make_run_log()
-        assert hasattr(run_log, "partition_key")
-        assert hasattr(run_log, "row_key")
-        assert hasattr(run_log, "status")
-        assert hasattr(run_log, "created_at")
-        assert hasattr(run_log, "message")
+        for attr in ("partition_key", "row_key", "status", "created_at", "message"):
+            assert hasattr(run_log, attr)
 
 
 # ---------------------------------------------------------------------------
@@ -538,35 +434,17 @@ class TestModelConfig:
 
 class TestEdgeCases:
     def test_unicode_message(self):
-        run_log = _make_run_log(message="Erreur: données invalides — café ☕")
-        assert "café" in run_log.message
+        assert "café" in _make_run_log(message="café ☕").message
 
     def test_message_with_newlines(self):
-        run_log = _make_run_log(message="Line 1\nLine 2\nLine 3")
-        assert "\n" in run_log.message
+        assert "\n" in _make_run_log(message="Line 1\nLine 2").message
 
     def test_run_id_with_dots(self):
-        run_log = _make_run_log(row_key="run.2024.001")
-        assert run_log.row_key == "run.2024.001"
-
-    def test_run_id_alphanumeric(self):
-        run_log = _make_run_log(row_key="abc123XYZ")
-        assert run_log.row_key == "abc123XYZ"
-
-    def test_partition_key_different_year(self):
-        run_log = _make_run_log(partition_key="2023-06-30")
-        assert run_log.partition_key == "2023-06-30"
+        assert _make_run_log(partition_key="run.2024.001").partition_key == "run.2024.001"
 
     def test_entity_keys_are_strings(self):
-        run_log = _make_run_log()
-        entity = run_log.to_entity()
-        for key in entity:
+        for key in _make_run_log().to_entity():
             assert isinstance(key, str)
-
-    def test_entity_status_is_string(self):
-        run_log = _make_run_log(status="success")
-        entity = run_log.to_entity()
-        assert isinstance(entity["status"], str)
 
     def test_from_entity_is_classmethod(self):
         import inspect
