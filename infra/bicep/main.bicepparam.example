@@ -1,7 +1,4 @@
-using './main.bicep'
-
-param environmentName = 'dev'
-param location = 'eastus'
-param aksNodeCount = 2
-param aksNodeVmSize = 'Standard_B2s'
-param storageAccountName = 'optionsinteldev001'
+location = 'eastus'
+environmentName = 'dev'
+aksNodeCount = 2
+aksNodeVmSize = 'Standard_B2s'
