@@ -3,69 +3,72 @@ targetScope = 'subscription'
 @description('Azure region for all resources')
 param location string = 'eastus'
 
-@description('Environment name used to generate resource names')
+@description('Environment name used to build resource names')
 param environmentName string = 'dev'
 
 @description('Name of the resource group to create')
 param resourceGroupName string = 'rg-options-analyzer-${environmentName}'
 
-@description('Kubernetes version for the AKS cluster')
-param kubernetesVersion string = '1.29'
-
-@description('Number of nodes in the AKS default node pool')
-param aksNodeCount int = 2
-
-@description('VM size for AKS nodes')
-param aksNodeVmSize string = 'Standard_B2s'
-
-@description('Name of the AKS cluster')
+@description('AKS cluster name')
 param aksClusterName string = 'aks-options-analyzer-${environmentName}'
 
-@description('Name of the Storage Account')
-param storageAccountName string = 'stooptionsanalyzer${environmentName}'
+@description('Storage account name (must be globally unique, 3-24 lowercase alphanumeric)')
+param storageAccountName string
+
+@description('Number of AKS agent nodes')
+param aksNodeCount int = 2
+
+@description('VM size for AKS agent nodes')
+param aksNodeVmSize string = 'Standard_B2s'
+
+@description('Kubernetes version')
+param kubernetesVersion string = '1.29'
+
+@description('Tags to apply to all resources')
+param tags object = {
+  project: 'options-analyzer'
+  environment: environmentName
+  managedBy: 'bicep'
+}
 
 // ---------------------------------------------------------------------------
-// Resource Group
+// Resource group
 // ---------------------------------------------------------------------------
 
 resource rg 'Microsoft.Resources/resourceGroups@2023-07-01' = {
   name: resourceGroupName
   location: location
-  tags: {
-    environment: environmentName
-    project: 'options-analyzer'
-    managedBy: 'bicep'
-  }
+  tags: tags
 }
 
 // ---------------------------------------------------------------------------
-// AKS Module
+// AKS module
 // ---------------------------------------------------------------------------
 
 module aks 'modules/aks.bicep' = {
-  name: 'aks-deployment'
+  name: 'deploy-aks'
   scope: rg
   params: {
-    location: location
     clusterName: aksClusterName
-    kubernetesVersion: kubernetesVersion
+    location: location
     nodeCount: aksNodeCount
     nodeVmSize: aksNodeVmSize
-    environmentName: environmentName
+    kubernetesVersion: kubernetesVersion
+    tags: tags
   }
 }
 
 // ---------------------------------------------------------------------------
-// Storage Module
+// Storage module
 // ---------------------------------------------------------------------------
 
 module storage 'modules/storage.bicep' = {
-  name: 'storage-deployment'
+  name: 'deploy-storage'
   scope: rg
   params: {
-    location: location
     storageAccountName: storageAccountName
-    environmentName: environmentName
+    location: location
+    tags: tags
   }
 }
 
@@ -76,14 +79,14 @@ module storage 'modules/storage.bicep' = {
 @description('Name of the provisioned resource group')
 output resourceGroupName string = rg.name
 
-@description('Name of the AKS cluster')
-output aksClusterName string = aks.outputs.clusterName
+@description('AKS cluster resource ID')
+output aksClusterId string = aks.outputs.clusterId
 
-@description('FQDN of the AKS API server')
-output aksControlPlaneFqdn string = aks.outputs.controlPlaneFqdn
+@description('AKS cluster FQDN')
+output aksClusterFqdn string = aks.outputs.clusterFqdn
 
-@description('Name of the Storage Account')
+@description('Storage account name')
 output storageAccountName string = storage.outputs.storageAccountName
 
-@description('Primary endpoint for Azure Table Storage')
-output tableStorageEndpoint string = storage.outputs.tableStorageEndpoint
+@description('Storage account primary endpoint (table)')
+output storageTableEndpoint string = storage.outputs.tableEndpoint
