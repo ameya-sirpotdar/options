@@ -11,11 +11,15 @@ EXPECTED_PATHS = [
     "backend/services/__init__.py",
     "backend/models/__init__.py",
     "backend/requirements.txt",
+    "backend/Dockerfile",
     "frontend/vue-app/.gitkeep",
     "infra/bicep/main.bicep",
     "infra/bicep/main.bicepparam.example",
     "infra/bicep/modules/aks.bicep",
     "infra/bicep/modules/storage.bicep",
+    "infra/k8s/deployment.yaml",
+    "infra/k8s/service.yaml",
+    "infra/k8s/README.md",
     "infra/README.md",
     "tests/test_project_structure.py",
 ]
@@ -64,6 +68,23 @@ def test_backend_requirements_txt_is_not_empty():
     )
     assert os.path.getsize(req_file) > 0, (
         "backend/requirements.txt must not be empty"
+    )
+
+
+def test_backend_dockerfile_exists():
+    dockerfile = os.path.join(REPO_ROOT, "backend", "Dockerfile")
+    assert os.path.isfile(dockerfile), (
+        "backend/Dockerfile must exist"
+    )
+
+
+def test_backend_dockerfile_is_not_empty():
+    dockerfile = os.path.join(REPO_ROOT, "backend", "Dockerfile")
+    assert os.path.isfile(dockerfile), (
+        "backend/Dockerfile must exist"
+    )
+    assert os.path.getsize(dockerfile) > 0, (
+        "backend/Dockerfile must not be empty"
     )
 
 
@@ -120,6 +141,64 @@ def test_infra_bicep_storage_module_exists():
     storage_bicep = os.path.join(REPO_ROOT, "infra", "bicep", "modules", "storage.bicep")
     assert os.path.isfile(storage_bicep), (
         "infra/bicep/modules/storage.bicep must exist"
+    )
+
+
+def test_infra_k8s_directory_exists():
+    k8s_dir = os.path.join(REPO_ROOT, "infra", "k8s")
+    assert os.path.isdir(k8s_dir), (
+        "infra/k8s/ directory must exist"
+    )
+
+
+def test_infra_k8s_deployment_yaml_exists():
+    deployment_yaml = os.path.join(REPO_ROOT, "infra", "k8s", "deployment.yaml")
+    assert os.path.isfile(deployment_yaml), (
+        "infra/k8s/deployment.yaml must exist"
+    )
+
+
+def test_infra_k8s_deployment_yaml_is_not_empty():
+    deployment_yaml = os.path.join(REPO_ROOT, "infra", "k8s", "deployment.yaml")
+    assert os.path.isfile(deployment_yaml), (
+        "infra/k8s/deployment.yaml must exist"
+    )
+    assert os.path.getsize(deployment_yaml) > 0, (
+        "infra/k8s/deployment.yaml must not be empty"
+    )
+
+
+def test_infra_k8s_service_yaml_exists():
+    service_yaml = os.path.join(REPO_ROOT, "infra", "k8s", "service.yaml")
+    assert os.path.isfile(service_yaml), (
+        "infra/k8s/service.yaml must exist"
+    )
+
+
+def test_infra_k8s_service_yaml_is_not_empty():
+    service_yaml = os.path.join(REPO_ROOT, "infra", "k8s", "service.yaml")
+    assert os.path.isfile(service_yaml), (
+        "infra/k8s/service.yaml must exist"
+    )
+    assert os.path.getsize(service_yaml) > 0, (
+        "infra/k8s/service.yaml must not be empty"
+    )
+
+
+def test_infra_k8s_readme_exists():
+    k8s_readme = os.path.join(REPO_ROOT, "infra", "k8s", "README.md")
+    assert os.path.isfile(k8s_readme), (
+        "infra/k8s/README.md must exist"
+    )
+
+
+def test_infra_k8s_readme_is_not_empty():
+    k8s_readme = os.path.join(REPO_ROOT, "infra", "k8s", "README.md")
+    assert os.path.isfile(k8s_readme), (
+        "infra/k8s/README.md must exist"
+    )
+    assert os.path.getsize(k8s_readme) > 0, (
+        "infra/k8s/README.md must not be empty"
     )
 
 
