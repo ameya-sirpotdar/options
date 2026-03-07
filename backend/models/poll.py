@@ -1,5 +1,5 @@
 from pydantic import BaseModel, field_validator, model_validator
-from typing import List, Any
+from typing import Any, Dict, List
 
 
 class PollOptionsRequest(BaseModel):
@@ -31,24 +31,17 @@ class PollOptionsRequest(BaseModel):
         return normalised
 
     @model_validator(mode="after")
-    def deduplicate_tickers(self) -> "PollOptionsRequest":
+    def deduplicate_and_limit(self) -> "PollOptionsRequest":
         seen = []
         for ticker in self.tickers:
             if ticker not in seen:
                 seen.append(ticker)
+        if len(seen) > 10:
+            raise ValueError("cannot poll more than 10 tickers at once")
         self.tickers = seen
         return self
 
 
-class TickerResult(BaseModel):
-    ticker: str
-    status: str
-    data: Any = None
-    error: str | None = None
-
-
 class PollOptionsResponse(BaseModel):
-    results: List[TickerResult]
-    total: int
-    succeeded: int
-    failed: int
+    tickers: List[str]
+    results: Dict[str, Any]
