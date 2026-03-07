@@ -17,6 +17,9 @@ EXPECTED_PATHS = [
     "infra/bicep/modules/aks.bicep",
     "infra/bicep/modules/storage.bicep",
     "infra/README.md",
+    "infra/k8s/deployment.yaml",
+    "infra/k8s/service.yaml",
+    "backend/Dockerfile",
     "tests/test_project_structure.py",
 ]
 
@@ -74,10 +77,17 @@ def test_frontend_vue_app_directory_exists():
     )
 
 
-def test_infra_terraform_directory_does_not_exist():
-    terraform_dir = os.path.join(REPO_ROOT, "infra", "terraform")
-    assert not os.path.exists(terraform_dir), (
-        "infra/terraform/ directory must not exist; legacy Terraform placeholder has been removed"
+def test_infra_k8s_directory_exists():
+    k8s_dir = os.path.join(REPO_ROOT, "infra", "k8s")
+    assert os.path.isdir(k8s_dir), (
+        "infra/k8s/ directory must exist"
+    )
+
+
+def test_backend_dockerfile_exists():
+    dockerfile = os.path.join(REPO_ROOT, "backend", "Dockerfile")
+    assert os.path.isfile(dockerfile), (
+        "backend/Dockerfile must exist"
     )
 
 
