@@ -36,10 +36,78 @@ A dedicated resource group is created at the subscription scope to contain all p
 - **SKU:** `Standard_LRS`
 - **Kind:** `StorageV2`
 - **Tables provisioned:**
-  - `optionsdata` – stores raw options chain data
+  - `optionsdata` – stores raw options chain data polled from the Schwab API (one entity per contract per polling run)
   - `sentimentdata` – stores computed sentiment signals
-  - `runlogs` – stores pipeline run audit logs
+  - `runlogs` – stores pipeline run audit logs (one entity per polling cycle)
 - **Purpose:** Lightweight, cost-effective persistence layer using Azure Table Storage
+
+## Table Schemas
+
+### `optionsdata`
+
+Stores one entity per options contract per polling run. Keyed for efficient retrieval by symbol and time.
+
+| Property | Type | Description |
+|---|---|---|
+| `PartitionKey` | `string` | Underlying symbol (e.g. `SPY`) |
+| `RowKey` | `string` | `<runId>_<contractSymbol>` |
+| `runId` | `string` | UUID identifying the polling cycle that produced this record |
+| `symbol` | `string` | Underlying equity symbol |
+| `contractSymbol` | `string` | Full OCC-style options contract symbol |
+| `putCall` | `string` | `PUT` or `CALL` |
+| `strikePrice` | `double` | Strike price |
+| `expirationDate` | `string` | Expiration date (ISO 8601) |
+| `bid` | `double` | Bid price |
+| `ask` | `double` | Ask price |
+| `last` | `double` | Last traded price |
+| `volume` | `int32` | Contract volume |
+| `openInterest` | `int32` | Open interest |
+| `impliedVolatility` | `double` | Implied volatility |
+| `delta` | `double` | Delta greek |
+| `gamma` | `double` | Gamma greek |
+| `theta` | `double` | Theta greek |
+| `vega` | `double` | Vega greek |
+| `rho` | `double` | Rho greek |
+| `inTheMoney` | `boolean` | Whether the contract is in the money |
+| `polledAt` | `string` | ISO 8601 UTC timestamp when the data was polled |
+| *(+ additional fields)* | | Up to ~45 fields from the Schwab API response |
+
+### `runlogs`
+
+Stores one entity per polling cycle for audit and observability purposes.
+
+| Property | Type | Description |
+|---|---|---|
+| `PartitionKey` | `string` | Fixed value `runlog` |
+| `RowKey` | `string` | `runId` UUID |
+| `runId` | `string` | UUID identifying the polling cycle |
+| `startedAt` | `string` | ISO 8601 UTC timestamp when the cycle started |
+| `completedAt` | `string` | ISO 8601 UTC timestamp when the cycle completed |
+| `status` | `string` | `success`, `partial`, or `failure` |
+| `symbolsRequested` | `int32` | Number of symbols submitted for polling |
+| `symbolsSucceeded` | `int32` | Number of symbols successfully retrieved |
+| `contractspersisted` | `int32` | Total number of option contract records written |
+| `errorMessage` | `string` | Error detail if status is not `success`, else empty |
+
+## Application Configuration
+
+The backend application connects to Azure Table Storage using a connection string supplied via environment variable. See `backend/.env.example` for the full list of required variables.
+
+| Variable | Description |
+|---|---|
+| `AZURE_STORAGE_CONNECTION_STRING` | Connection string for the Azure Storage account (found in the Azure Portal under **Storage account → Access keys**) |
+
+### Retrieving the connection string after deployment
+
+```bash
+az storage account show-connection-string \
+  --resource-group "<your-resource-group-name>" \
+  --name "<your-storage-account-name>" \
+  --query connectionString \
+  --output tsv
+```
+
+Copy the output and set it as `AZURE_STORAGE_CONNECTION_STRING` in your `.env` file (never commit this value to source control).
 
 ## Prerequisites
 
@@ -105,6 +173,12 @@ az aks show --resource-group "<your-resource-group-name>" --name "<your-aks-clus
 
 # Check storage account tables
 az storage table list --account-name "<your-storage-account-name>" --output table
+
+# Verify optionsdata table exists
+az storage table exists --account-name "<your-storage-account-name>" --name optionsdata
+
+# Verify runlogs table exists
+az storage table exists --account-name "<your-storage-account-name>" --name runlogs
 ```
 
 ## Tearing Down
@@ -138,3 +212,6 @@ az deployment sub validate \
 - All child modules are scoped to the resource group created by `main.bicep`.
 - Storage uses **Azure Table Storage** (not Blob or Queue) for its schema-flexible, low-cost characteristics suitable for time-series financial data.
 - AKS uses a **system-assigned managed identity** to avoid the need to manage service principal credentials manually.
+- The `optionsdata` table is written via batch upsert in chunks of 100 entities (the Azure Table Storage maximum per batch transaction). This keeps write latency low even for large options chains.
+- The `runlogs` table is written as a single entity at the end of each polling cycle and serves as the primary observability record for monitoring and alerting.
+- Storage failures during a polling cycle are caught and logged as warnings; they do not crash the polling loop, ensuring the application remains resilient to transient storage errors.
