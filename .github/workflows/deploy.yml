@@ -16,12 +16,34 @@ env:
   AKS_CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
 
 jobs:
+  changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-latest
+    outputs:
+      infra: ${{ steps.filter.outputs.infra }}
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            infra:
+              - 'infra/bicep/**'
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+
   deploy-infra:
     name: Deploy Infrastructure
     runs-on: ubuntu-latest
-    if: |
-      contains(toJson(github.event.commits.*.modified), 'infra/bicep/') ||
-      contains(toJson(github.event.commits.*.added), 'infra/bicep/')
+    needs: changes
+    if: needs.changes.outputs.infra == 'true'
 
     steps:
       - name: Checkout repository
@@ -37,23 +59,26 @@ jobs:
       - name: Deploy Bicep template
         uses: azure/arm-deploy@v2
         with:
-          resourceGroupName: ${{ env.AZURE_RESOURCE_GROUP }}
+          scope: subscription
+          region: ${{ env.AZURE_LOCATION }}
           template: infra/bicep/main.bicep
-          parameters: >
-            location=${{ env.AZURE_LOCATION }}
+          parameters: location=${{ env.AZURE_LOCATION }}
           failOnStdErr: true
 
   deploy-backend:
     name: Deploy Backend
     runs-on: ubuntu-latest
+    needs: [changes, deploy-infra]
     if: |
-      contains(toJson(github.event.commits.*.modified), 'backend/') ||
-      contains(toJson(github.event.commits.*.added), 'backend/')
+      always() &&
+      needs.changes.outputs.backend == 'true' &&
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped')
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Each job performs its own OIDC login for intentional isolation.
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
@@ -74,8 +99,8 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           tags: |
-            ${{ env.ACR_NAME }}.azurecr.io/backend:latest
             ${{ env.ACR_NAME }}.azurecr.io/backend:${{ github.sha }}
+            ${{ env.ACR_NAME }}.azurecr.io/backend:main
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -86,21 +111,36 @@ jobs:
           cluster-name: ${{ env.AKS_CLUSTER_NAME }}
 
       - name: Substitute image tag in Kubernetes manifests
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          ACR_NAME: ${{ env.ACR_NAME }}
         run: |
-          find infra/k8s -name '*.yaml' -o -name '*.yml' | xargs sed -i \
-            "s|IMAGE_TAG|${{ github.sha }}|g"
-          find infra/k8s -name '*.yaml' -o -name '*.yml' | xargs sed -i \
-            "s|ACR_NAME|${{ env.ACR_NAME }}|g"
+          # Capture file list once to ensure atomicity across both checks and substitution
+          MANIFESTS=$(find infra/k8s -name '*.yaml' -o -name '*.yml')
+          echo "$MANIFESTS" | xargs grep -l 'IMAGE_TAG\|ACR_NAME' || \
+            (echo "ERROR: No placeholders found in manifests" && exit 1)
+          echo "$MANIFESTS" | xargs sed -i \
+            -e "s|IMAGE_TAG|${IMAGE_TAG}|g" \
+            -e "s|ACR_NAME|${ACR_NAME}|g"
+
+      - name: Validate Kubernetes manifests (dry-run)
+        run: kubectl apply -f infra/k8s/ --dry-run=server
 
       - name: Apply Kubernetes manifests
-        run: kubectl apply -f infra/k8s/
+        run: kubectl apply -f infra/k8s/ --server-side
+
+      - name: Wait for rollout to complete
+        run: |
+          kubectl rollout status deployment/backend -n default --timeout=5m
 
   deploy-frontend:
     name: Deploy Frontend
     runs-on: ubuntu-latest
+    needs: [changes, deploy-infra]
     if: |
-      contains(toJson(github.event.commits.*.modified), 'frontend/') ||
-      contains(toJson(github.event.commits.*.added), 'frontend/')
+      always() &&
+      needs.changes.outputs.frontend == 'true' &&
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped')
 
     steps:
       - name: Checkout repository
@@ -123,6 +163,7 @@ jobs:
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
 
+      # Each job performs its own OIDC login for intentional isolation.
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
