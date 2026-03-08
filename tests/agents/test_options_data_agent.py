@@ -39,3 +39,17 @@ def test_options_data_agent_run_preserves_all_keys():
     assert set(result.keys()) == set(state.keys())
     for key in state:
         assert result[key] == state[key]
+
+
+def test_options_data_agent_preserves_errors():
+    agent = OptionsDataAgent()
+    state_with_errors = {
+        "ticker": "AAPL",
+        "options_data": None,
+        "metrics": None,
+        "market_sentiment": None,
+        "tradability_score": None,
+        "errors": ["prior error"],
+    }
+    result = agent.run(state_with_errors)
+    assert result["errors"] == ["prior error"]
