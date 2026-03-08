@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, List, Optional
 from typing_extensions import TypedDict
 
 
@@ -10,4 +10,4 @@ class PipelineState(TypedDict):
     metrics: Optional[Any]
     market_sentiment: Optional[Any]
     tradability_score: Optional[Any]
-    errors: list[str]
+    errors: List[str]
