@@ -10,7 +10,7 @@ param environmentName string = 'dev'
 param resourceGroupName string = 'rg-options-pipeline-${environmentName}'
 
 @description('Number of AKS agent nodes')
-param aksNodeCount int = 2
+param aksNodeCount int = 1
 
 @description('VM size for AKS agent nodes')
 param aksNodeVmSize string = 'Standard_B2s'
@@ -68,11 +68,8 @@ output resourceGroupName string = rg.name
 @description('Name of the AKS cluster')
 output aksClusterName string = aks.outputs.clusterName
 
-@description('Resource ID of the AKS cluster')
-output aksClusterId string = aks.outputs.clusterId
-
 @description('Name of the Storage account')
 output storageAccountName string = storage.outputs.storageAccountName
 
 @description('Primary endpoint for Azure Table Storage')
-output tableStorageEndpoint string = storage.outputs.tableStorageEndpoint
+output tableStorageEndpoint string = storage.outputs.tableServiceEndpoint
