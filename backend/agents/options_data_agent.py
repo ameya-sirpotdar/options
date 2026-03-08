@@ -1,22 +1,4 @@
-from typing import TypedDict
-
-
-class OptionsDataState(TypedDict, total=False):
-    """Typed state dictionary for the OptionsDataAgent."""
-
-    ticker: str
-    expiration_date: str
-    strike_price: float
-    option_type: str
-    implied_volatility: float
-    open_interest: int
-    volume: int
-    delta: float
-    gamma: float
-    theta: float
-    vega: float
-    options_chain: list
-    error: str
+from backend.agents.state import PipelineState
 
 
 class OptionsDataAgent:
@@ -32,20 +14,28 @@ class OptionsDataAgent:
     Current status: placeholder stub — `run` returns the state unchanged.
     """
 
-    def run(self, state: OptionsDataState) -> OptionsDataState:
+    def run(self, state: PipelineState) -> PipelineState:
         """Execute the options data retrieval step.
 
         Parameters
         ----------
         state:
-            The current LangGraph workflow state dictionary.  All keys are
-            optional; the agent is expected to read ``ticker`` and
-            ``expiration_date`` (at minimum) and write back the options
-            fields once fully implemented.
+            The current LangGraph workflow state dictionary shared across
+            all agents in the pipeline.  The agent is expected to read
+            ``ticker`` and write back ``options_data`` once fully
+            implemented.
 
         Returns
         -------
-        OptionsDataState
-            The state dictionary passed in, returned unchanged by this stub.
+        PipelineState
+            The state dictionary with ``options_data`` populated (stub
+            returns the state unchanged with ``options_data`` set to
+            ``None``).
         """
+        # TODO: implement options chain retrieval and populate options_data
+        state["options_data"] = None
         return state
+
+    def __call__(self, state: PipelineState) -> PipelineState:
+        """Allow the agent instance to be used directly as a LangGraph node."""
+        return self.run(state)
