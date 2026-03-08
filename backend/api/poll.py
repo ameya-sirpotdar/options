@@ -9,9 +9,7 @@ polling_service = PollingService()
 @router.post("/poll/options", response_model=PollOptionsResponse)
 async def poll_options(request: PollOptionsRequest):
     try:
-        result = await polling_service.poll_options(request)
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except RuntimeError as e:
+        results = polling_service.poll_options(request.tickers)
+        return PollOptionsResponse(tickers=request.tickers, results=results)
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
