@@ -20,12 +20,14 @@ async def get_best_trade(
     """
     Returns the single best trade candidate based on the Tradability Index.
 
-    The tradability score is computed as a weighted combination of:
-    - Liquidity score
-    - Volatility score
-    - Momentum score
-    - Spread score
-    - Volume score
+    The tradability score is computed from a weighted combination of:
+    - Liquidity
+    - Volatility
+    - Momentum
+    - Spread
+    - Volume consistency
+
+    Returns the highest-scoring candidate that meets the minimum score threshold.
     """
     try:
         best = service.get_best_trade(top_n=top_n, min_score=min_score)
@@ -37,7 +39,7 @@ async def get_best_trade(
     if best is None:
         raise HTTPException(
             status_code=404,
-            detail="No trade candidates meet the minimum score threshold",
+            detail=f"No trade candidates found meeting the minimum score threshold of {min_score}",
         )
 
     return best
