@@ -1,5 +1,5 @@
 from pydantic import BaseModel, field_validator, model_validator
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 class PollOptionsRequest(BaseModel):
@@ -45,3 +45,4 @@ class PollOptionsRequest(BaseModel):
 class PollOptionsResponse(BaseModel):
     tickers: List[str]
     results: Dict[str, Any]
+    run_id: Optional[str] = None
