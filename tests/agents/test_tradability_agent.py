@@ -76,3 +76,20 @@ def test_tradability_agent_preserves_other_state_keys():
     assert result["metrics"] == sample_state["metrics"]
     assert result["market_sentiment"] == sample_state["market_sentiment"]
     assert result["errors"] == sample_state["errors"]
+
+
+BASE_STATE = {
+    "ticker": "AAPL",
+    "options_data": {"calls": [], "puts": []},
+    "metrics": {"iv_rank": 45.0, "delta": 0.3},
+    "market_sentiment": None,
+    "tradability_score": None,
+    "errors": [],
+}
+
+
+def test_preserves_existing_errors():
+    agent = TradabilityAgent()
+    state = {**BASE_STATE, "errors": ["upstream error"]}
+    result = agent.run(state)
+    assert "upstream error" in result["errors"], "Agent must not clear pre-existing errors"
