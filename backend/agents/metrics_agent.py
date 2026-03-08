@@ -1,5 +1,7 @@
 from backend.agents.state import PipelineState
 
+__all__ = ["MetricsAgent"]
+
 
 class MetricsAgent:
     """Agent responsible for computing financial and options metrics.
