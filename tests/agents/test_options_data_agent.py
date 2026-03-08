@@ -53,3 +53,19 @@ def test_options_data_agent_preserves_errors():
     }
     result = agent.run(state_with_errors)
     assert result["errors"] == ["prior error"]
+
+
+def test_does_not_mutate_input_state():
+    import copy
+    agent = OptionsDataAgent()
+    original = {
+        "ticker": "AAPL",
+        "options_data": None,
+        "metrics": None,
+        "market_sentiment": None,
+        "tradability_score": None,
+        "errors": [],
+    }
+    state_copy = copy.deepcopy(original)
+    agent.run(original)
+    assert original == state_copy, "Agent must not mutate the input state dict"
