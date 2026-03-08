@@ -27,6 +27,17 @@ param acrName string = 'acroptions${environmentName}'
 @description('SKU for the Azure Container Registry')
 param acrSku string = 'Basic'
 
+@maxLength(40)
+@description('Name of the Static Web App (must be globally unique, max 40 chars)')
+param staticWebAppName string = 'swa-options-pipeline-${environmentName}'
+
+@description('Azure region for the Static Web App (Free SKU: eastus2, centralus, westus2, westeurope, eastasia)')
+param swaLocation string = 'eastus2'
+
+var tags = {
+  environment: environmentName
+}
+
 // ---------------------------------------------------------------------------
 // Resource group
 // ---------------------------------------------------------------------------
@@ -99,6 +110,20 @@ module storage 'modules/storage.bicep' = {
 }
 
 // ---------------------------------------------------------------------------
+// Static Web App module
+// ---------------------------------------------------------------------------
+
+module swa 'modules/swa.bicep' = {
+  name: 'swa-deployment'
+  scope: rg
+  params: {
+    location: swaLocation
+    staticSiteName: staticWebAppName
+    tags: tags
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
 
@@ -119,3 +144,9 @@ output acrLoginServer string = acr.outputs.acrLoginServer
 
 @description('Name of the Azure Container Registry')
 output acrName string = acr.outputs.acrName
+
+@description('Default hostname of the Static Web App')
+output swaDefaultHostname string = swa.outputs.defaultHostname
+
+@description('Resource ID of the Static Web App')
+output swaResourceId string = swa.outputs.staticSiteId
