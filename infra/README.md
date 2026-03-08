@@ -16,7 +16,7 @@ infra/
 ├── k8s/
 │   ├── deployment.yaml             # Kubernetes Deployment for the Python backend service
 │   ├── service.yaml                # Kubernetes ClusterIP Service for the backend
-│   └── README.md                   # Documentation for the k8s manifests
+│   └── README.md                   # Usage instructions for the k8s manifests
 └── README.md                       # This file
 ```
 
@@ -49,10 +49,12 @@ A dedicated resource group is created at the subscription scope to contain all p
 
 The `k8s/` directory contains production-ready Kubernetes manifests for deploying the Python backend service onto the AKS cluster provisioned by the Bicep templates above.
 
-- **`k8s/deployment.yaml`** – Deploys the backend service with 2 replicas, resource requests/limits, and liveness/readiness probes.
-- **`k8s/service.yaml`** – Exposes the backend Deployment internally within the cluster via a `ClusterIP` Service.
+| Manifest | Description |
+|---|---|
+| `k8s/deployment.yaml` | Deploys 2 replicas of the backend service with resource limits and liveness/readiness probes |
+| `k8s/service.yaml` | Exposes the backend via a ClusterIP Service on port 80, forwarding to container port 8000 |
 
-See [`k8s/README.md`](k8s/README.md) for full usage instructions.
+See [`k8s/README.md`](k8s/README.md) for full usage instructions, including how to apply the manifests and connect to the AKS cluster.
 
 ## Prerequisites
 
@@ -65,10 +67,6 @@ See [`k8s/README.md`](k8s/README.md) for full usage instructions.
    ```bash
    az bicep install
    az bicep version
-   ```
-3. [kubectl](https://kubernetes.io/docs/tasks/tools/) installed and configured to point at your AKS cluster:
-   ```bash
-   az aks get-credentials --resource-group "<your-resource-group-name>" --name "<your-aks-cluster-name>"
    ```
 
 ## Deployment
@@ -111,7 +109,23 @@ az deployment sub create \
   --parameters infra/bicep/main.bicepparam
 ```
 
-### 3. Verify the deployment
+### 3. Deploy the Kubernetes manifests
+
+After the AKS cluster is provisioned, configure `kubectl` and apply the manifests:
+
+```bash
+# Fetch AKS credentials
+az aks get-credentials \
+  --resource-group "<your-resource-group-name>" \
+  --name "<your-aks-cluster-name>"
+
+# Apply all k8s manifests
+kubectl apply -f infra/k8s/
+```
+
+See [`k8s/README.md`](k8s/README.md) for more detail.
+
+### 4. Verify the deployment
 
 ```bash
 # List resources in the new resource group
@@ -122,24 +136,12 @@ az aks show --resource-group "<your-resource-group-name>" --name "<your-aks-clus
 
 # Check storage account tables
 az storage table list --account-name "<your-storage-account-name>" --output table
+
+# Check Kubernetes workloads
+kubectl get deployments
+kubectl get pods
+kubectl get services
 ```
-
-### 4. Apply Kubernetes manifests
-
-Once the AKS cluster is provisioned and `kubectl` is configured:
-
-```bash
-kubectl apply -f infra/k8s/deployment.yaml
-kubectl apply -f infra/k8s/service.yaml
-```
-
-Or apply the entire directory at once:
-
-```bash
-kubectl apply -f infra/k8s/
-```
-
-See [`k8s/README.md`](k8s/README.md) for further details on verifying and managing the Kubernetes workloads.
 
 ## Tearing Down
 
@@ -172,4 +174,4 @@ az deployment sub validate \
 - All child modules are scoped to the resource group created by `main.bicep`.
 - Storage uses **Azure Table Storage** (not Blob or Queue) for its schema-flexible, low-cost characteristics suitable for time-series financial data.
 - AKS uses a **system-assigned managed identity** to avoid the need to manage service principal credentials manually.
-- The Kubernetes manifests in `k8s/` are designed to run on the AKS cluster provisioned by the Bicep templates, but are standard Kubernetes resources compatible with any conformant cluster.
+- The Kubernetes manifests in `k8s/` are designed to run on the AKS cluster provisioned by the Bicep templates, but are standard Kubernetes resources and will work on any conformant cluster.
