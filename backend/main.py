@@ -2,6 +2,7 @@ import logging
 import os
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.logging_config import configure_logging
 from backend.api.middleware import RequestLoggingMiddleware
@@ -14,6 +15,16 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Options Polling API", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.add_middleware(RequestLoggingMiddleware)
 
