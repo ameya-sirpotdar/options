@@ -1,4 +1,3 @@
-tests/services/test_azure_table_service.py
 from unittest.mock import MagicMock, patch, call
 import pytest
 from datetime import datetime, timezone
