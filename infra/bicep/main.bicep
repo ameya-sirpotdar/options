@@ -21,6 +21,12 @@ param aksClusterName string = 'aks-options-pipeline-${environmentName}'
 @description('Name of the Storage account')
 param storageAccountName string = 'stoptions${environmentName}'
 
+@description('Name of the Static Web App')
+param staticWebAppName string = 'swa-options-pipeline-${environmentName}'
+
+@description('Azure region for the Static Web App (Free SKU has limited regions)')
+param swaLocation string = 'eastus2'
+
 // ---------------------------------------------------------------------------
 // Resource group
 // ---------------------------------------------------------------------------
@@ -59,6 +65,22 @@ module storage 'modules/storage.bicep' = {
 }
 
 // ---------------------------------------------------------------------------
+// Static Web App module
+// ---------------------------------------------------------------------------
+
+module swa 'modules/swa.bicep' = {
+  name: 'swa-deployment'
+  scope: rg
+  params: {
+    location: swaLocation
+    staticSiteName: staticWebAppName
+    tags: {
+      environment: environmentName
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
 
@@ -73,3 +95,9 @@ output storageAccountName string = storage.outputs.storageAccountName
 
 @description('Primary endpoint for Azure Table Storage')
 output tableStorageEndpoint string = storage.outputs.tableServiceEndpoint
+
+@description('Default hostname of the Static Web App')
+output swaDefaultHostname string = swa.outputs.defaultHostname
+
+@description('Resource ID of the Static Web App')
+output swaResourceId string = swa.outputs.staticSiteId
