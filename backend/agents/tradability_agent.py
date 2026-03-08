@@ -1,15 +1,4 @@
-from typing import TypedDict
-
-
-class TradabilityState(TypedDict, total=False):
-    """State dictionary for the TradabilityAgent pipeline node."""
-
-    ticker: str
-    sentiment_score: float
-    options_data: dict
-    metrics: dict
-    tradability_score: float
-    recommendation: str
+from backend.agents.state import PipelineState
 
 
 class TradabilityAgent:
@@ -31,7 +20,7 @@ class TradabilityAgent:
         the scoring logic is implemented.
     """
 
-    def run(self, state: TradabilityState) -> TradabilityState:
+    def run(self, state: PipelineState) -> PipelineState:
         """
         Execute the tradability assessment step.
 
@@ -42,7 +31,12 @@ class TradabilityAgent:
 
         Returns
         -------
-        TradabilityState
+        PipelineState
             The state dictionary, returned unchanged by this stub.
         """
+        # TODO: implement weighted scoring model and set state['tradability_score']
         return state
+
+    def __call__(self, state: PipelineState) -> PipelineState:
+        """Allow the agent to be used directly as a LangGraph node callable."""
+        return self.run(state)
