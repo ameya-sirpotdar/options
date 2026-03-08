@@ -1,5 +1,7 @@
-# TODO: fetch real sentiment data in a follow-up issue
+# TODO(#XX): fetch real sentiment data — see follow-up issue for implementation.
 from backend.agents.state import PipelineState
+
+__all__ = ["MarketSentimentAgent"]
 
 
 class MarketSentimentAgent:
