@@ -1,7 +1,9 @@
 @description('Azure region for the Static Web App')
 param location string
 
-@description('Name of the Static Web App resource')
+@minLength(2)
+@maxLength(40)
+@description('Name of the Static Web App resource.')
 param staticSiteName string
 
 @description('Resource tags')
