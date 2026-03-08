@@ -1,11 +1,4 @@
-from typing import TypedDict
-
-
-class MetricsState(TypedDict, total=False):
-    """Typed state dictionary for the MetricsAgent pipeline node."""
-
-    ticker: str
-    metrics: dict
+from backend.agents.state import PipelineState
 
 
 class MetricsAgent:
@@ -14,10 +7,10 @@ class MetricsAgent:
     In the full pipeline this agent will calculate Greeks, implied
     volatility surfaces, historical volatility, and other quantitative
     metrics required downstream by the TradabilityAgent.  For now it
-    is a stub that returns the state dict unchanged.
+    is a stub that returns the state dict with ``metrics`` set to None.
     """
 
-    def run(self, state: MetricsState) -> MetricsState:
+    def run(self, state: PipelineState) -> PipelineState:
         """Execute the metrics computation step.
 
         Parameters
@@ -27,8 +20,14 @@ class MetricsAgent:
 
         Returns
         -------
-        MetricsState
-            The state dict returned unchanged until this agent is fully
-            implemented.
+        PipelineState
+            The state dict with ``metrics`` set to None until this agent
+            is fully implemented.
         """
+        # TODO: implement Greeks, IV surface, and historical volatility.
+        state["metrics"] = None
         return state
+
+    def __call__(self, state: PipelineState) -> PipelineState:
+        """Allow the agent instance to be used directly as a LangGraph node."""
+        return self.run(state)
