@@ -1,4 +1,3 @@
-tests/agents/test_tradability_agent.py
 from backend.agents.tradability_agent import TradabilityAgent
 
 
@@ -59,3 +58,21 @@ def test_tradability_agent_run_preserves_all_keys():
     result = agent.run(state)
     for key in state:
         assert key in result
+
+
+def test_tradability_agent_preserves_other_state_keys():
+    agent = TradabilityAgent()
+    sample_state = {
+        "ticker": "AAPL",
+        "options_data": {"calls": [], "puts": []},
+        "metrics": {"iv_rank": 45.0, "delta": 0.3},
+        "market_sentiment": None,
+        "tradability_score": None,
+        "errors": [],
+    }
+    result = agent.run(sample_state)
+    assert result["ticker"] == sample_state["ticker"]
+    assert result["options_data"] == sample_state["options_data"]
+    assert result["metrics"] == sample_state["metrics"]
+    assert result["market_sentiment"] == sample_state["market_sentiment"]
+    assert result["errors"] == sample_state["errors"]
