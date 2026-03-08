@@ -1,45 +1,36 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Optional
-
-from backend.models.tradability import TradabilityScore
-from backend.services.tradability_service import TradabilityService
+from fastapi import APIRouter, HTTPException
+from backend.services.tradability_service import rank_candidates
+from backend.models.options_data import OptionsRow, BestTradeResponse
 
 router = APIRouter(prefix="/trades", tags=["trades"])
 
 
-def get_tradability_service() -> TradabilityService:
-    return TradabilityService()
-
-
-@router.get("/best", response_model=TradabilityScore)
-async def get_best_trade(
-    top_n: Optional[int] = Query(default=10, ge=1, le=100, description="Number of top candidates to consider"),
-    min_score: Optional[float] = Query(default=0.0, ge=0.0, le=1.0, description="Minimum tradability score threshold"),
-    service: TradabilityService = Depends(get_tradability_service),
-):
+@router.get("/best", response_model=BestTradeResponse)
+def get_best_trade(candidates: list[OptionsRow] = None):
     """
-    Returns the single best trade candidate based on the Tradability Index.
+    Return the single best trade candidate ranked by the tradability index.
 
-    The tradability score is computed from a weighted combination of:
-    - Liquidity
-    - Volatility
-    - Momentum
-    - Spread
-    - Volume consistency
-
-    Returns the highest-scoring candidate that meets the minimum score threshold.
+    Expects a JSON body list of options rows (each with delta, theta, iv, premium).
+    Returns the top-ranked candidate along with its computed tradability score.
     """
-    try:
-        best = service.get_best_trade(top_n=top_n, min_score=min_score)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail="Internal server error while computing tradability scores") from exc
-
-    if best is None:
+    if not candidates:
         raise HTTPException(
-            status_code=404,
-            detail=f"No trade candidates found meeting the minimum score threshold of {min_score}",
+            status_code=422,
+            detail="No candidate options rows provided. Supply a non-empty list of options rows.",
         )
 
-    return best
+    ranked = rank_candidates(candidates)
+
+    if not ranked:
+        raise HTTPException(
+            status_code=404,
+            detail="No valid trade candidates could be ranked from the provided data.",
+        )
+
+    best = ranked[0]
+
+    return BestTradeResponse(
+        best_candidate=best["candidate"],
+        score=best["score"],
+        rank=1,
+    )
