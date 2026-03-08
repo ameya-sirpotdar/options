@@ -12,8 +12,6 @@ permissions:
 env:
   AZURE_RESOURCE_GROUP: rg-production
   AZURE_LOCATION: eastus
-  ACR_NAME: ${{ secrets.ACR_NAME }}
-  AKS_CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
 
 jobs:
   changes:
@@ -44,6 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.infra == 'true'
+    environment: production
 
     steps:
       - name: Checkout repository
@@ -69,14 +68,35 @@ jobs:
     name: Deploy Backend
     runs-on: ubuntu-latest
     needs: [changes, deploy-infra]
+    # always() prevents GitHub from auto-skipping this job when deploy-infra is skipped
+    # (e.g. no infra changes). The explicit result checks then gate on actual outcomes.
+    # 'cancelled' is excluded explicitly so a cancelled infra run causes a hard failure
+    # rather than a silent skip.
     if: |
       always() &&
       needs.changes.outputs.backend == 'true' &&
-      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped')
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped') &&
+      needs.deploy-infra.result != 'cancelled'
+    environment: production
+    env:
+      ACR_NAME: ${{ secrets.ACR_NAME }}
+      AKS_CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
+      K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'production' }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          missing=0
+          for var in ACR_NAME AKS_CLUSTER_NAME; do
+            if [ -z "${!var}" ]; then
+              echo "ERROR: Required secret/variable $var is not set"
+              missing=1
+            fi
+          done
+          [ $missing -eq 0 ] || exit 1
 
       # Each job performs its own OIDC login for intentional isolation.
       - name: Azure Login (OIDC)
@@ -115,32 +135,44 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
           ACR_NAME: ${{ env.ACR_NAME }}
         run: |
-          # Capture file list once to ensure atomicity across both checks and substitution
-          MANIFESTS=$(find infra/k8s -name '*.yaml' -o -name '*.yml')
-          echo "$MANIFESTS" | xargs grep -l 'IMAGE_TAG\|ACR_NAME' || \
-            (echo "ERROR: No placeholders found in manifests" && exit 1)
+          # Capture file list once to ensure consistency across check and substitution.
+          # Manifests must use __IMAGE_TAG__ and __ACR_NAME__ as delimited placeholders
+          # (e.g. image: __ACR_NAME__.azurecr.io/backend:__IMAGE_TAG__) to avoid
+          # accidental substitution in comments or unrelated config values.
+          MANIFESTS=$(find infra/k8s/backend -name '*.yaml' -o -name '*.yml')
+          if ! echo "$MANIFESTS" | xargs grep -ql '__IMAGE_TAG__\|__ACR_NAME__'; then
+            echo "ERROR: No placeholders found in manifests" && exit 1
+          fi
           echo "$MANIFESTS" | xargs sed -i \
-            -e "s|IMAGE_TAG|${IMAGE_TAG}|g" \
-            -e "s|ACR_NAME|${ACR_NAME}|g"
+            -e "s|__IMAGE_TAG__|${IMAGE_TAG}|g" \
+            -e "s|__ACR_NAME__|${ACR_NAME}|g"
 
       - name: Validate Kubernetes manifests (dry-run)
-        run: kubectl apply -f infra/k8s/ --dry-run=server
+        run: kubectl apply -f infra/k8s/backend/ --dry-run=server
 
       - name: Apply Kubernetes manifests
-        run: kubectl apply -f infra/k8s/ --server-side
+        run: kubectl apply -f infra/k8s/backend/ --server-side
 
       - name: Wait for rollout to complete
         run: |
-          kubectl rollout status deployment/backend -n default --timeout=5m
+          kubectl rollout status deployment/backend -n ${{ env.K8S_NAMESPACE }} --timeout=5m
+
+      - name: Smoke test backend
+        run: |
+          BACKEND_URL=$(kubectl get svc backend -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          curl --fail --retry 5 --retry-delay 5 "http://${BACKEND_URL}/health"
 
   deploy-frontend:
     name: Deploy Frontend
     runs-on: ubuntu-latest
+    # deploy-backend and deploy-frontend both depend only on deploy-infra (not each other),
+    # so they run in parallel once infra completes. This is intentional.
     needs: [changes, deploy-infra]
     if: |
       always() &&
       needs.changes.outputs.frontend == 'true' &&
       (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped')
+    environment: production
 
     steps:
       - name: Checkout repository
@@ -161,7 +193,10 @@ jobs:
         working-directory: ./frontend
         run: npm run build
         env:
-          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          # VITE_API_BASE_URL is not a secret — it is a non-sensitive build-time config value.
+          # It is stored as a GitHub Actions variable (vars.*) rather than a secret so it
+          # is not masked in logs and its non-sensitive nature is explicit.
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
 
       # Each job performs its own OIDC login for intentional isolation.
       - name: Azure Login (OIDC)
