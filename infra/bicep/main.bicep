@@ -21,11 +21,16 @@ param aksClusterName string = 'aks-options-pipeline-${environmentName}'
 @description('Name of the Storage account')
 param storageAccountName string = 'stoptions${environmentName}'
 
-@description('Name of the Static Web App')
+@maxLength(40)
+@description('Name of the Static Web App (must be globally unique, max 40 chars)')
 param staticWebAppName string = 'swa-options-pipeline-${environmentName}'
 
-@description('Azure region for the Static Web App (Free SKU has limited regions)')
+@description('Azure region for the Static Web App (Free SKU: eastus2, centralus, westus2, westeurope, eastasia)')
 param swaLocation string = 'eastus2'
+
+var tags = {
+  environment: environmentName
+}
 
 // ---------------------------------------------------------------------------
 // Resource group
@@ -74,9 +79,7 @@ module swa 'modules/swa.bicep' = {
   params: {
     location: swaLocation
     staticSiteName: staticWebAppName
-    tags: {
-      environment: environmentName
-    }
+    tags: tags
   }
 }
 
