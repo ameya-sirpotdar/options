@@ -78,35 +78,68 @@ Unit tests for `RunLogRecord` serialisation.
 ## Implementation Steps
 
 1. **Add dependency** — append `azure-data-tables>=12.5.0` to `backend/requirements.txt`.
+   - Commit: `chore: add azure-data-tables dependency to requirements.txt`
+   - Push to feature branch: `git push origin feature/issue-21-azure-table-persistence`
 
 2. **Create `backend/models/options_data.py`**
    - Define `OptionsContractRecord(BaseModel)` with all ~45 fields, all optional with `None` defaults.
    - Add `partition_key` property returning `runId`.
    - Add `row_key` property returning `symbol` (OCC).
    - Add `to_entity()` method that converts the model to a flat dict suitable for Azure Table Storage (no nested objects; booleans as bool, floats as float, None fields omitted or stored as empty string per ATS constraints).
+   - Commit: `feat: add OptionsContractRecord pydantic model`
+   - Push: `git push origin feature/issue-21-azure-table-persistence`
 
 3. **Create `backend/models/run_log.py`**
    - Define `RunLogRecord(BaseModel)` with fields listed above.
    - Add `to_entity()` method; convert `tickersProcessed` list to comma-separated string.
+   - Commit: `feat: add RunLogRecord pydantic model`
+   - Push: `git push origin feature/issue-21-azure-table-persistence`
 
-4. **Create `backend/services/azure_table_service.py`**
+4. **Update `backend/models/__init__.py`**
+   - Re-export `OptionsContractRecord` and `RunLogRecord`.
+   - Commit: `chore: re-export new models from backend/models/__init__.py`
+   - Push: `git push origin feature/issue-21-azure-table-persistence`
+
+5. **Create `backend/services/azure_table_service.py`**
    - Implement `AzureTableService` as described.
    - Use `TableClient.upsert_entity(mode=UpdateMode.MERGE)` for options records.
    - Batch writes using `TableClient.submit_transaction` in chunks of 100 (ATS batch limit) within the same PartitionKey.
    - Expose `upsert_options_records` and `write_run_log`.
+   - Commit: `feat: implement AzureTableService with batch upsert and run log write`
+   - Push: `git push origin feature/issue-21-azure-table-persistence`
 
-5. **Update `backend/services/polling_service.py`**
+6. **Update `backend/services/polling_service.py`**
    - Generate `runId = str(uuid.uuid4())` at the start of each poll cycle.
    - After fetching and filtering contracts for each ticker, map to `OptionsContractRecord` objects (use `.get()` with `None` default for every field).
    - Accumulate all records across tickers.
    - Call `azure_table_service.upsert_options_records(all_records)`.
    - Build and write `RunLogRecord`.
+   - Commit: `feat: integrate AzureTableService into polling_service`
+   - Push: `git push origin feature/issue-21-azure-table-persistence`
 
-6. **Update `backend/main.py`** — wire `AzureTableService` instantiation.
+7. **Update `backend/agents/options_agent.py`**
+   - Thread `runId` through correctly if the agent invokes the polling service.
+   - Commit: `fix: thread runId through options_agent to polling_service`
+   - Push: `git push origin feature/issue-21-azure-table-persistence`
 
-7. **Update `backend/models/__init__.py`** — re-export new models.
+8. **Update `backend/main.py`**
+   - Wire `AzureTableService` instantiation at startup and inject into `polling_service`.
+   - Commit: `feat: instantiate AzureTableService at startup in main.py`
+   - Push: `git push origin feature/issue-21-azure-table-persistence`
 
-8. **Write tests** — see Test Strategy below.
+9. **Document environment variables**
+   - Add required variables to `infra/README.md` or a new `backend/.env.example`.
+   - Commit: `docs: document Azure Storage environment variables in .env.example`
+   - Push: `git push origin feature/issue-21-azure-table-persistence`
+
+10. **Write tests**
+    - Add `tests/test_options_data_model.py`, `tests/test_run_log_model.py`, `tests/test_azure_table_service.py`, and extend `tests/test_poll_options.py`.
+    - Commit: `test: add unit and integration tests for Azure Table Storage persistence`
+    - Push: `git push origin feature/issue-21-azure-table-persistence`
+
+11. **Open pull request**
+    - Open a PR from `feature/issue-21-azure-table-persistence` → `main` referencing Issue #21.
+    - Ensure CI passes before requesting review.
 
 ---
 
@@ -170,6 +203,26 @@ runId, fetchedAt (UTC ISO timestamp)
 - ATS batch boundary: >100 contracts → multiple transactions submitted
 - Duplicate `runId` + `symbol` → upsert (merge) overwrites cleanly
 - `None` float fields → stored as empty string or omitted (ATS does not support null natively)
+
+---
+
+## Branch and Commit Strategy
+
+All work is done on a single feature branch created from `main` before any changes begin:
+
+```bash
+git checkout main
+git pull origin main
+git checkout -b feature/issue-21-azure-table-persistence
+```
+
+Each implementation step above has its own atomic commit with a conventional commit message. After every commit, push immediately so work is visible on the remote and CI runs incrementally:
+
+```bash
+git push origin feature/issue-21-azure-table-persistence
+```
+
+Once all steps are complete and CI is green, open a pull request from `feature/issue-21-azure-table-persistence` → `main` referencing `Closes #21` in the PR description.
 
 ---
 
