@@ -91,6 +91,16 @@ output staticSiteName string = staticSite.name
    output swaResourceId string = swa.outputs.staticSiteId
    ```
 
+### `infra/bicep/main.bicepparam.example` (if present)
+
+Add entries documenting the new parameters so that operators know they exist and can override them:
+
+```bicep
+// Azure Static Web App
+staticWebAppName = 'swa-options-pipeline-dev'   // must be globally unique
+swaLocation      = 'eastus2'                     // Free tier region — change only if needed
+```
+
 ---
 
 ## Implementation Steps
@@ -100,19 +110,19 @@ output staticSiteName string = staticSite.name
    a. Add `staticWebAppName` and `swaLocation` parameters.
    b. Add the `swa` module block after the storage module.
    c. Add `swaDefaultHostname` and `swaResourceId` outputs.
-3. **Validate both files** compile without errors:
+3. **Update `infra/bicep/main.bicepparam.example`** to document the two new parameters (see above). If the file does not exist, create it with at minimum the new SWA entries so there is a discoverable reference for operators.
+4. **Validate both files** compile without errors:
    ```bash
    az bicep build --file infra/bicep/modules/swa.bicep
    az bicep build --file infra/bicep/main.bicep
    ```
-4. **(Optional)** Update `infra/bicep/main.bicepparam.example` to document the new parameters if that file contains parameter examples.
 
 ---
 
 ## Test Strategy
 
 - **Bicep lint/build:** Run `az bicep build` on both files to confirm no syntax or schema errors.
-- **What-if deployment (optional):** Run `az deployment sub what-if` against a dev subscription to confirm the SWA resource would be created as expected without actually provisioning it.
+- **What-if deployment:** Run `az deployment sub what-if` against a dev subscription to confirm the SWA resource would be created as expected without actually provisioning it.
 - **Output verification:** Confirm that `swaDefaultHostname` and `swaResourceId` are present in the deployment outputs after a test deployment.
 
 ---
@@ -120,6 +130,13 @@ output staticSiteName string = staticSite.name
 ## Edge Cases to Handle
 
 - **Region availability:** SWA Free tier is not available in all regions. The `swaLocation` parameter defaults to `eastus2` (supported) and is separate from the main `location` param to avoid accidental override.
-- **Name uniqueness:** Static Web App names must be globally unique within Azure. The default name pattern `swa-options-pipeline-${environmentName}` should be sufficiently unique for most environments, but teams should be aware they may need to customise it.
+- **Name uniqueness:** Static Web App names must be globally unique within Azure. The default name pattern `swa-options-pipeline-${environmentName}` should be sufficiently unique for most environments, but teams should be aware they may need to customise it. The example param file makes this visible and easy to override.
 - **SKU constraints:** Free tier limits (100 GB bandwidth, 0.5 GB storage) are acceptable for MVP. If the project grows, the SKU can be upgraded to Standard.
 - **No linked repo:** `skipGithubActionWorkflowGeneration: true` prevents Azure from auto-generating a GitHub Actions workflow, which is the correct behaviour since deployment is handled separately.
+
+---
+
+## Dependencies
+
+- **Blocked by:** none
+- **Blocks:** #29 (Frontend Demo UI — needs SWA to deploy), #33 (CI/CD pipeline — frontend deployment target)
