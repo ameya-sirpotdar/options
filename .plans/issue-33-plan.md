@@ -12,6 +12,8 @@ Additionally, a new `infra/bicep/modules/acr.bicep` module must be created and w
 
 All jobs use `azure/login` with OIDC federation (preferred) or service principal credentials stored as GitHub secrets.
 
+> **Blocking dependencies:** This plan is blocked by #31 (SWA infrastructure — required for frontend deployment target) and #34 (ACR infrastructure — required for backend image registry). The ACR Bicep module created here provisions ACR as part of the pipeline, but the SWA deployment token and AKS role assignments must be confirmed resolved in those issues before this pipeline is production-ready.
+
 ---
 
 ## Files to Create
@@ -37,6 +39,10 @@ Bicep module to provision Azure Container Registry. Parameters: `acrName`, `loca
 ### `infra/k8s/deployment.yaml`
 - Verify `${ACR_NAME}` and `${IMAGE_TAG}` placeholders are present (document expected format)
 - No structural changes needed if placeholders already exist
+
+### `infra/README.md`
+- Add `## CI/CD Secrets` section documenting all required secrets and variables
+- Add `## First-Time Bootstrap` section documenting manual steps required before the pipeline can run
 
 ---
 
@@ -71,6 +77,8 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
 output acrLoginServer string = acr.properties.loginServer
 output acrName string = acr.name
 ```
+
+> **Note on admin credentials:** `adminUserEnabled` is set to `false`. The AKS cluster must be granted the `AcrPull` role on this registry via a managed identity role assignment. See the AKS→ACR Role Assignment section below and the README documentation in Step 5.
 
 ### Step 2: Update `infra/bicep/main.bicep`
 
@@ -202,6 +210,13 @@ jobs:
             --name ${{ env.AKS_CLUSTER_NAME }} \
             --overwrite-existing
 
+      - name: Install envsubst
+        run: |
+          # envsubst ships with gettext; confirm availability or install
+          if ! command -v envsubst &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y gettext
+          fi
+
       - name: Substitute and apply K8s manifests
         env:
           IMAGE_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}
@@ -225,7 +240,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check frontend app exists
+        id: frontend-check
+        run: |
+          if [ ! -f frontend/vue-app/package.json ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "::warning::frontend/vue-app/package.json not found — skipping frontend deployment"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Setup Node.js
+        if: steps.frontend-check.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -233,14 +259,17 @@ jobs:
           cache-dependency-path: frontend/vue-app/package-lock.json
 
       - name: Install dependencies
+        if: steps.frontend-check.outputs.skip != 'true'
         working-directory: frontend/vue-app
         run: npm ci
 
       - name: Build Vue app
+        if: steps.frontend-check.outputs.skip != 'true'
         working-directory: frontend/vue-app
         run: npm run build
 
       - name: Deploy to Static Web App
+        if: steps.frontend-check.outputs.skip != 'true'
         uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.SWA_DEPLOYMENT_TOKEN }}
@@ -251,37 +280,81 @@ jobs:
           skip_app_build: true
 ```
 
-### Step 4: Document Required Secrets
+### Step 4: Document Required Secrets and Bootstrap Steps in `infra/README.md`
 
-Add a `## CI/CD Secrets` section to `infra/README.md` listing:
+#### `## CI/CD Secrets`
 
-| Secret / Variable | Where Used | Description |
-|---|---|---|
-| `AZURE_CLIENT_ID` | All jobs | OIDC app registration client ID |
-| `AZURE_TENANT_ID` | All jobs | Azure AD tenant ID |
-| `AZURE_SUBSCRIPTION_ID` | All jobs | Azure subscription ID |
-| `SWA_DEPLOYMENT_TOKEN` | deploy-frontend | SWA deployment token from Azure portal |
-| `AZURE_RESOURCE_GROUP` (var) | deploy-backend | Resource group name |
-| `AZURE_LOCATION` (var) | deploy-infra | Azure region (e.g. eastus) |
-| `AKS_CLUSTER_NAME` (var) | deploy-backend | AKS cluster name |
-| `ACR_NAME` (var) | deploy-backend | ACR registry name (no `.azurecr.io`) |
+Add the following table:
+
+| Secret / Variable | Type | Where Used | Description |
+|---|---|---|---|
+| `AZURE_CLIENT_ID` | Secret | All jobs | OIDC app registration client ID |
+| `AZURE_TENANT_ID` | Secret | All jobs | Azure AD tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | Secret | All jobs | Azure subscription ID |
+| `SWA_DEPLOYMENT_TOKEN` | Secret | `deploy-frontend` | SWA deployment token from Azure portal (available after #31 is resolved) |
+| `AZURE_RESOURCE_GROUP` | Variable | `deploy-backend` | Resource group name |
+| `AZURE_LOCATION` | Variable | `deploy-infra` | Azure region (e.g. `eastus`) |
+| `AKS_CLUSTER_NAME` | Variable | `deploy-backend` | AKS cluster name |
+| `ACR_NAME` | Variable | `deploy-backend`, `deploy-infra` | ACR registry name (without `.azurecr.io`) |
+
+Secrets are set under **Settings → Secrets and variables → Actions** in the GitHub repository. Variables (`vars.*`) are set under the **Variables** tab in the same location.
+
+#### `## First-Time Bootstrap`
+
+Add the following section to document manual prerequisites that must be completed before the pipeline can run end-to-end:
+
+1. **Deploy infrastructure manually on first run.** The `deploy-backend` job assumes ACR already exists. On the very first deployment, trigger `deploy-infra` first (e.g. by making a trivial change to `infra/bicep/`) before merging any backend changes, or run the Bicep deployment manually:
+   ```bash
+   az deployment sub create \
+     --location eastus \
+     --template-file infra/bicep/main.bicep \
+     --parameters acrName=<your-acr-name>
+   ```
+
+2. **Grant AKS the `AcrPull` role on ACR.** Because `adminUserEnabled` is `false`, the AKS kubelet managed identity must be assigned the `AcrPull` role on the ACR resource. Run once after ACR and AKS are provisioned:
+   ```bash
+   ACR_ID=$(az acr show --name <ACR_NAME> --query id -o tsv)
+   AKS_KUBELET_ID=$(az aks show \
+     --resource-group <RESOURCE_GROUP> \
+     --name <AKS_CLUSTER_NAME> \
+     --query identityProfile.kubeletidentity.objectId -o tsv)
+   az role assignment create \
+     --assignee $AKS_KUBELET_ID \
+     --role AcrPull \
+     --scope $ACR_ID
+   ```
+   > This step should be automated in a future iteration by adding a role assignment resource to `infra/bicep/main.bicep`. It is documented here as a manual step until that work is scheduled.
+
+3. **Configure OIDC federation.** The app registration identified by `AZURE_CLIENT_ID` must have a federated credential configured for the `main` branch of this repository. See [Microsoft docs on OIDC with GitHub Actions](https://learn.microsoft.com/en-us/azure/developer/github/connect-from-azure).
+
+4. **Retrieve the SWA deployment token.** After #31 provisions the Static Web App, retrieve the deployment token from the Azure portal or via:
+   ```bash
+   az staticwebapp secrets list --name <SWA_NAME> --query properties.apiKey -o tsv
+   ```
+   Store this value as the `SWA_DEPLOYMENT_TOKEN` secret.
+
+5. **Enable GitHub environment protection rules.** Configure the `production` environment under **Settings → Environments** with required reviewers and a deployment branch policy restricted to `main`. This prevents concurrent production deployments.
 
 ---
 
 ## Test Strategy
 
-1. **Dry-run Bicep**: Use `az deployment sub what-if` in a PR check job to validate templates without deploying
-2. **Docker build smoke test**: Add a `docker build` step in a PR workflow (no push) to catch Dockerfile errors early
-3. **Workflow syntax**: Use `actionlint` in CI to lint workflow YAML
-4. **Path filter validation**: Manually trigger with changes to each path group to confirm correct job isolation
-5. **Rollout verification**: `kubectl rollout status` with timeout catches failed deployments
+1. **Dry-run Bicep (PR check):** Add a separate PR workflow (not included in this plan's scope but recommended as a follow-up) that runs `az deployment sub what-if` to validate Bicep templates without deploying.
+2. **Docker build smoke test (PR check):** Add a `docker build` step in a PR workflow (no push) to catch Dockerfile errors before merge.
+3. **Workflow syntax validation:** Use `actionlint` in CI to lint workflow YAML. Run locally with:
+   ```bash
+   actionlint .github/workflows/deploy.yml
+   ```
+4. **Path filter validation:** Manually trigger the workflow with changes scoped to each path group (`infra/bicep/`, `backend/`, `frontend/`) and confirm only the expected job runs.
+5. **Rollout verification:** `kubectl rollout status deployment/backend --timeout=120s` catches failed deployments and fails the job, preventing silent rollout failures.
+6. **Frontend guard validation:** Confirm the `deploy-frontend` job emits a warning and exits cleanly when `frontend/vue-app/package.json` does not exist (e.g. only `.gitkeep` is present).
 
 ---
 
 ## Edge Cases to Handle
 
-- **First-time deploy**: ACR may not exist when backend job runs if infra job hasn't run yet — document that infra must be deployed first, or add an explicit dependency
-- **Concurrent runs**: Use GitHub environment protection rules to prevent concurrent production deployments
-- **Frontend not yet built**: The frontend job gracefully skips if `frontend/vue-app/` has no `package.json` (only `.gitkeep` exists) — add a guard step
-- **`envsubst` availability**: `envsubst` is available on `ubuntu-latest` via `gettext` package; confirm or add install step
-- **AKS→ACR role assignment**: Prefer managed identity / role assignment over admin credentials; document this in README
+| Edge Case | Mitigation |
+|---|---|
+| **First-time deploy — ACR doesn't exist** | Document in README bootstrap steps that `deploy-infra` must run before `deploy-backend`. Infra and backend changes should not be merged in the same PR on first setup. |
+| **Concurrent production deployments** | GitHub environment protection rules on the `production` environment prevent concurrent runs. Document this in README. |
+| **Frontend not yet scaffolded** | The `Check frontend app exists` step in `deploy-frontend`
