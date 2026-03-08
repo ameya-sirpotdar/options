@@ -1,4 +1,4 @@
-# TODO(#XX): fetch real sentiment data — see follow-up issue for implementation.
+# TODO: fetch real sentiment data — MarketSentimentAgent is a stub pending a follow-up issue.
 from backend.agents.state import PipelineState
 
 __all__ = ["MarketSentimentAgent"]
