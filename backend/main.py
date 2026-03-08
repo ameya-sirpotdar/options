@@ -7,6 +7,7 @@ from backend.api.logging_config import configure_logging
 from backend.api.middleware import RequestLoggingMiddleware
 from backend.api.poll import router as poll_router
 from backend.api.routers.health import router as health_router
+from backend.api.routers.trades import router as trades_router
 from backend.services.azure_table_service import AzureTableService
 
 configure_logging()
@@ -19,6 +20,7 @@ app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(health_router)
 app.include_router(poll_router)
+app.include_router(trades_router)
 
 
 @app.on_event("startup")
