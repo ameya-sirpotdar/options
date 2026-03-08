@@ -5,3 +5,5 @@ param location = 'eastus'
 param aksNodeCount = 1
 param aksNodeVmSize = 'Standard_B2s'
 param storageAccountName = 'youruniquestorename'
+param staticWebAppName = 'swa-options-pipeline-dev'
+param swaLocation = 'eastus2'
