@@ -1,11 +1,5 @@
-from typing import TypedDict
-
-
-class MarketSentimentState(TypedDict):
-    ticker: str
-    sentiment_score: float
-    sentiment_label: str
-    news_headlines: list[str]
+# TODO: fetch real sentiment data in a follow-up issue
+from backend.agents.state import PipelineState
 
 
 class MarketSentimentAgent:
@@ -16,24 +10,28 @@ class MarketSentimentAgent:
     - Fetch recent news headlines and social media signals for the ticker
     - Run a sentiment model to produce a numeric sentiment score
     - Classify the score into a human-readable label (e.g. bullish, bearish, neutral)
-    - Populate the MarketSentimentState fields for downstream agents to consume
+    - Populate the market_sentiment field of PipelineState for downstream agents
 
-    Currently implemented as a no-op stub that returns the state dict unchanged.
+    Currently implemented as a no-op stub that sets market_sentiment to None.
     """
 
-    def run(self, state: MarketSentimentState) -> MarketSentimentState:
+    def run(self, state: PipelineState) -> PipelineState:
         """
         Execute the market sentiment analysis step.
 
         Parameters
         ----------
         state:
-            The current pipeline state dictionary containing at minimum a ``ticker``
-            key.  All other keys may be absent or set to their zero values.
+            The current shared pipeline state dictionary.
 
         Returns
         -------
-        MarketSentimentState
-            The state dictionary returned unchanged (stub behaviour).
+        PipelineState
+            The state dictionary with ``market_sentiment`` set to ``None``
+            (stub behaviour).
         """
+        state["market_sentiment"] = None
         return state
+
+    def __call__(self, state: PipelineState) -> PipelineState:
+        return self.run(state)
