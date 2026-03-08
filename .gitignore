@@ -60,6 +60,9 @@ serviceaccount.json
 kubeconfig
 *.kubeconfig
 
+# Pipeline state
+.pipeline_state/
+
 # Logs
 *.log
 logs/
