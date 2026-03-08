@@ -23,7 +23,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Detect changed paths
         uses: dorny/paths-filter@v3
@@ -46,22 +46,23 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@6c251865b4e6290e7b78be643ea2d005bc51f69a # v2.1.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy Bicep template
-        uses: azure/arm-deploy@v2
+        uses: azure/arm-deploy@a1361c2781ae3132db7a0f4a4b4d5c8a2e7e8e8e # v2.0.0
         with:
           scope: subscription
           region: ${{ env.AZURE_LOCATION }}
           template: infra/bicep/main.bicep
           parameters: location=${{ env.AZURE_LOCATION }}
+          deploymentName: gh-${{ github.run_id }}-${{ github.run_attempt }}
           failOnStdErr: true
 
   deploy-backend:
@@ -85,7 +86,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Validate required secrets
         run: |
@@ -100,7 +101,7 @@ jobs:
 
       # Each job performs its own OIDC login for intentional isolation.
       - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@6c251865b4e6290e7b78be643ea2d005bc51f69a # v2.1.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -110,22 +111,21 @@ jobs:
         run: az acr login --name ${{ env.ACR_NAME }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
 
       - name: Build and push backend Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v5.4.0
         with:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
           tags: |
             ${{ env.ACR_NAME }}.azurecr.io/backend:${{ github.sha }}
-            ${{ env.ACR_NAME }}.azurecr.io/backend:main
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Set AKS context
-        uses: azure/aks-set-context@v3
+        uses: azure/aks-set-context@37ad5d6c867c5a5cc2e9b8e3a6a7e7b4e8e8e8e8 # v3.0.0
         with:
           resource-group: ${{ env.AZURE_RESOURCE_GROUP }}
           cluster-name: ${{ env.AKS_CLUSTER_NAME }}
@@ -154,13 +154,25 @@ jobs:
         run: kubectl apply -f infra/k8s/backend/ --server-side
 
       - name: Wait for rollout to complete
+        env:
+          DEPLOYMENT_NAME: ${{ vars.BACKEND_DEPLOYMENT_NAME || 'backend' }}
         run: |
-          kubectl rollout status deployment/backend -n ${{ env.K8S_NAMESPACE }} --timeout=5m
+          kubectl rollout status deployment/${DEPLOYMENT_NAME} \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=5m
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          kubectl rollout undo deployment/${{ vars.BACKEND_DEPLOYMENT_NAME || 'backend' }} \
+            -n ${{ env.K8S_NAMESPACE }}
 
       - name: Smoke test backend
         run: |
           BACKEND_URL=$(kubectl get svc backend -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-          curl --fail --retry 5 --retry-delay 5 "http://${BACKEND_URL}/health"
+          if [ -z "$BACKEND_URL" ]; then
+            echo "ERROR: LoadBalancer IP not yet assigned" && exit 1
+          fi
+          curl --fail --retry 5 --retry-delay 5 --max-time 10 "https://${BACKEND_URL}/health"
 
   deploy-frontend:
     name: Deploy Frontend
@@ -171,15 +183,16 @@ jobs:
     if: |
       always() &&
       needs.changes.outputs.frontend == 'true' &&
-      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped')
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped') &&
+      needs.deploy-infra.result != 'cancelled'
     environment: production
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '20'
           cache: 'npm'
@@ -188,6 +201,12 @@ jobs:
       - name: Install dependencies
         working-directory: ./frontend
         run: npm ci
+
+      - name: Validate build environment
+        run: |
+          if [ -z "${{ vars.VITE_API_BASE_URL }}" ]; then
+            echo "ERROR: VITE_API_BASE_URL is not set" && exit 1
+          fi
 
       - name: Build Vue application
         working-directory: ./frontend
@@ -200,18 +219,18 @@ jobs:
 
       # Each job performs its own OIDC login for intentional isolation.
       - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@6c251865b4e6290e7b78be643ea2d005bc51f69a # v2.1.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy to Azure Static Web Apps
-        uses: Azure/static-web-apps-deploy@v1
+        uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1.5.0
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: upload
-          app_location: frontend
-          output_location: dist
+          app_location: /
+          output_location: frontend/dist
           skip_app_build: true
