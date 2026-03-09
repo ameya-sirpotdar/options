@@ -73,8 +73,9 @@ jobs:
     name: Deploy Backend
     runs-on: ubuntu-latest
     needs: [changes, deploy-infra]
-    # always() prevents GitHub from auto-skipping this job when deploy-infra is skipped
-    # (e.g. no infra changes). The explicit result checks then gate on actual outcomes.
+    # IMPORTANT: always() is required here. Without it, GitHub auto-skips this job
+    # when deploy-infra is skipped (no infra changes). The explicit result checks
+    # below provide the actual gate logic. Do NOT remove always().
     # 'cancelled' is excluded explicitly so a cancelled infra run causes a hard failure
     # rather than a silent skip.
     if: |
@@ -96,7 +97,7 @@ jobs:
           missing=0
           for var in ACR_NAME AKS_CLUSTER_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
             if [ -z "${!var}" ]; then
-              echo "ERROR: Required secret/variable $var is not set"
+              echo "ERROR: One or more required secrets/variables are not set"
               missing=1
             fi
           done
@@ -129,7 +130,6 @@ jobs:
           push: true
           tags: |
             ${{ env.ACR_NAME }}.azurecr.io/backend:${{ github.sha }}
-            ${{ env.ACR_NAME }}.azurecr.io/backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -159,30 +159,39 @@ jobs:
           done
 
       - name: Validate Kubernetes manifests (dry-run)
-        run: kubectl apply -f infra/k8s/backend/ --dry-run=server
+        run: kubectl apply -f infra/k8s/backend/ --dry-run=server --namespace=${{ env.K8S_NAMESPACE }}
 
       - name: Apply Kubernetes manifests
         id: apply
-        run: kubectl apply -f infra/k8s/backend/ --server-side
+        run: kubectl apply -f infra/k8s/backend/ --server-side --namespace=${{ env.K8S_NAMESPACE }}
 
       - name: Wait for rollout to complete
         id: rollout_wait
         run: |
-          for deploy in $(kubectl get deployments -n ${{ env.K8S_NAMESPACE }} -l app=backend -o name); do
+          set -euo pipefail
+          mapfile -t DEPLOYS < <(kubectl get deployments -n ${{ env.K8S_NAMESPACE }} -l app=backend -o name)
+          if [ ${#DEPLOYS[@]} -eq 0 ]; then
+            echo "ERROR: No backend deployments found in namespace ${{ env.K8S_NAMESPACE }}" && exit 1
+          fi
+          for deploy in "${DEPLOYS[@]}"; do
             kubectl rollout status "$deploy" -n ${{ env.K8S_NAMESPACE }} --timeout=5m
           done
 
       - name: Rollback on failure
-        if: failure() && steps.apply.conclusion == 'success'
+        if: failure() && (steps.apply.conclusion == 'success' || steps.apply.conclusion == 'failure')
         run: |
-          for deploy in $(kubectl get deployments -n ${{ env.K8S_NAMESPACE }} -l app=backend -o name); do
+          set -euo pipefail
+          mapfile -t DEPLOYS < <(kubectl get deployments -n ${{ env.K8S_NAMESPACE }} -l app=backend -o name)
+          for deploy in "${DEPLOYS[@]}"; do
             kubectl rollout undo "$deploy" -n ${{ env.K8S_NAMESPACE }}
           done
 
       - name: Smoke test backend
+        env:
+          INGRESS_NAME: ${{ vars.BACKEND_INGRESS_NAME || 'backend' }}
         run: |
-          INGRESS_NAME=${{ vars.BACKEND_INGRESS_NAME || 'backend' }}
-          BACKEND_URL=$(kubectl get ingress ${INGRESS_NAME} -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          set -euo pipefail
+          BACKEND_URL=$(kubectl get ingress "${INGRESS_NAME}" -n "${{ env.K8S_NAMESPACE }}" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
           if [ -z "$BACKEND_URL" ]; then
             echo "ERROR: Ingress hostname not yet assigned" && exit 1
           fi
@@ -196,8 +205,8 @@ jobs:
             if [ "$attempt" -ge "$max_attempts" ]; then
               echo "ERROR: Smoke test failed after $max_attempts attempts" && exit 1
             fi
-            echo "Attempt $attempt/$max_attempts failed, retrying in 15s..."
-            sleep 15
+            echo "Attempt $attempt/$max_attempts — waiting 30s before retry..."
+            sleep 30
           done
 
   deploy-frontend:
