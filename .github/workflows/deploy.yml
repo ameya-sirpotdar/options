@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 env:
-  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP || 'rg-production' }}
-  AZURE_LOCATION: ${{ vars.AZURE_LOCATION || 'eastus' }}
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
 
 jobs:
   changes:
@@ -84,19 +84,22 @@ jobs:
       (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped')
     environment: production
     env:
-      ACR_NAME: ${{ secrets.ACR_NAME }}
-      AKS_CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'production' }}
 
     steps:
       - name: Validate required secrets
+        env:
+          ACR_NAME: ${{ secrets.ACR_NAME }}
+          AKS_CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
         run: |
           set +x  # prevent accidental value echo via xtrace
           missing=0
-          for var in ACR_NAME AKS_CLUSTER_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+          for var in ACR_NAME AKS_CLUSTER_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_LOCATION; do
             if [ -z "${!var}" ]; then
               echo "ERROR: Required secret/variable '$var' is not set"
               missing=1
@@ -118,6 +121,8 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Log in to Azure Container Registry
+        env:
+          ACR_NAME: ${{ secrets.ACR_NAME }}
         run: az acr login --name "$ACR_NAME"
 
       - name: Set up Docker Buildx
@@ -125,13 +130,14 @@ jobs:
 
       - name: Build and push backend Docker image
         uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v5.4.0
+        env:
+          ACR_NAME: ${{ secrets.ACR_NAME }}
         with:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
           tags: |
-            ${{ env.ACR_NAME }}.azurecr.io/backend:${{ github.sha }}
-            ${{ env.ACR_NAME }}.azurecr.io/backend:latest
+            ${{ secrets.ACR_NAME }}.azurecr.io/backend:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -139,12 +145,12 @@ jobs:
         uses: azure/aks-set-context@4e5aec273183a197b181314721843e047123d9dd # v3.0.0
         with:
           resource-group: ${{ env.AZURE_RESOURCE_GROUP }}
-          cluster-name: ${{ env.AKS_CLUSTER_NAME }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
 
       - name: Substitute image tag in Kubernetes manifests
         env:
           IMAGE_TAG: ${{ github.sha }}
-          ACR_NAME: ${{ env.ACR_NAME }}
+          ACR_NAME: ${{ secrets.ACR_NAME }}
         run: |
           # Capture file list once to ensure consistency across check and substitution.
           # Manifests must use __IMAGE_TAG__ and __ACR_NAME__ as delimited placeholders
@@ -179,7 +185,7 @@ jobs:
           fi
           pids=()
           for deploy in "${DEPLOYS[@]}"; do
-            kubectl rollout status "$deploy" -n ${{ env.K8S_NAMESPACE }} --timeout=5m &
+            kubectl rollout status "$deploy" -n ${{ env.K8S_NAMESPACE }} --timeout=${{ vars.ROLLOUT_TIMEOUT || '5m' }} &
             pids+=("$!")
           done
           failed=0
@@ -189,7 +195,7 @@ jobs:
           [ $failed -eq 0 ] || exit 1
 
       - name: Rollback on failure
-        if: failure() && steps.apply.conclusion == 'success'
+        if: failure() && steps.apply.conclusion == 'success' && steps.rollout_wait.conclusion == 'failure'
         run: |
           set -euo pipefail
           mapfile -t DEPLOYS < <(kubectl get deployments -n ${{ env.K8S_NAMESPACE }} -l app=backend -o name)
