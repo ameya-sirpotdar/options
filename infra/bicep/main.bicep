@@ -85,11 +85,11 @@ module acr 'modules/acr.bicep' = {
 // ---------------------------------------------------------------------------
 
 module acrPullRoleAssignment 'modules/roleassignment.bicep' = {
-  name: 'roleassignment-deployment'
+  name: 'acr-pull-role-assignment'
   scope: rg
   params: {
-    acrId: acr.outputs.acrId
-    kubeletPrincipalId: aks.outputs.kubeletIdentityObjectId
+    acrName: acr.outputs.acrName
+    aksPrincipalId: aks.outputs.kubeletPrincipalId
   }
 }
 
