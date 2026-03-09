@@ -1,5 +1,5 @@
 frontend/vue-app/src/api/endpoints.js
-import { apiClient } from './client.js'
+import apiClient from './client.js'
 
 export async function pollOptions({ delta, expiry }) {
   const response = await apiClient.get('/options/poll', {
