@@ -206,7 +206,7 @@ jobs:
         id: apply
         env:
           NAMESPACE: ${{ env.K8S_NAMESPACE }}
-        run: kubectl apply -f infra/k8s/ --server-side --namespace="$NAMESPACE"
+        run: kubectl apply -f infra/k8s/ --server-side --force-conflicts --namespace="$NAMESPACE"
 
       - name: Wait for rollout to complete
         id: rollout_wait
