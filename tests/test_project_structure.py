@@ -14,6 +14,7 @@ EXPECTED_PATHS = [
     "frontend/vue-app/.gitkeep",
     "infra/bicep/main.bicep",
     "infra/bicep/main.bicepparam.example",
+    "infra/bicep/modules/acr.bicep",
     "infra/bicep/modules/aks.bicep",
     "infra/bicep/modules/storage.bicep",
     "infra/README.md",
@@ -123,6 +124,13 @@ def test_infra_bicep_aks_module_exists():
     aks_bicep = os.path.join(REPO_ROOT, "infra", "bicep", "modules", "aks.bicep")
     assert os.path.isfile(aks_bicep), (
         "infra/bicep/modules/aks.bicep must exist"
+    )
+
+
+def test_infra_bicep_acr_module_exists():
+    acr_bicep = os.path.join(REPO_ROOT, "infra", "bicep", "modules", "acr.bicep")
+    assert os.path.isfile(acr_bicep), (
+        "infra/bicep/modules/acr.bicep must exist"
     )
 
 

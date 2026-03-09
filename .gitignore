@@ -66,6 +66,7 @@ kubeconfig
 # Implementation / planning documents (use wiki, Notion, or docs/adr/ instead)
 .plans/
 
+
 # Logs
 *.log
 logs/

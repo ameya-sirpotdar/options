@@ -21,6 +21,23 @@ param aksClusterName string = 'aks-options-pipeline-${environmentName}'
 @description('Name of the Storage account')
 param storageAccountName string = 'stoptions${environmentName}'
 
+@description('Name of the Azure Container Registry')
+param acrName string = 'acroptions${environmentName}'
+
+@description('SKU for the Azure Container Registry')
+param acrSku string = 'Basic'
+
+@maxLength(40)
+@description('Name of the Static Web App (must be globally unique, max 40 chars)')
+param staticWebAppName string = 'swa-options-pipeline-${environmentName}'
+
+@description('Azure region for the Static Web App (Free SKU: eastus2, centralus, westus2, westeurope, eastasia)')
+param swaLocation string = 'eastus2'
+
+var tags = {
+  environment: environmentName
+}
+
 // ---------------------------------------------------------------------------
 // Resource group
 // ---------------------------------------------------------------------------
@@ -46,6 +63,40 @@ module aks 'modules/aks.bicep' = {
 }
 
 // ---------------------------------------------------------------------------
+// Azure Container Registry module
+// ---------------------------------------------------------------------------
+
+module acr 'modules/acr.bicep' = {
+  name: 'acr-deployment'
+  scope: rg
+  params: {
+    location: location
+    acrName: acrName
+    acrSku: acrSku
+  }
+}
+
+// ---------------------------------------------------------------------------
+// AcrPull role assignment – allows AKS kubelet identity to pull images
+// ---------------------------------------------------------------------------
+
+var acrPullRoleDefinitionId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+
+resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(acr.outputs.acrId, aks.outputs.kubeletIdentityObjectId, acrPullRoleDefinitionId)
+  scope: resourceGroup(resourceGroupName)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleDefinitionId)
+    principalId: aks.outputs.kubeletIdentityObjectId
+    principalType: 'ServicePrincipal'
+  }
+  dependsOn: [
+    acr
+    aks
+  ]
+}
+
+// ---------------------------------------------------------------------------
 // Storage account module
 // ---------------------------------------------------------------------------
 
@@ -55,6 +106,20 @@ module storage 'modules/storage.bicep' = {
   params: {
     location: location
     storageAccountName: storageAccountName
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Static Web App module
+// ---------------------------------------------------------------------------
+
+module swa 'modules/swa.bicep' = {
+  name: 'swa-deployment'
+  scope: rg
+  params: {
+    location: swaLocation
+    staticSiteName: staticWebAppName
+    tags: tags
   }
 }
 
@@ -73,3 +138,15 @@ output storageAccountName string = storage.outputs.storageAccountName
 
 @description('Primary endpoint for Azure Table Storage')
 output tableStorageEndpoint string = storage.outputs.tableServiceEndpoint
+
+@description('Login server URL for the Azure Container Registry')
+output acrLoginServer string = acr.outputs.acrLoginServer
+
+@description('Name of the Azure Container Registry')
+output acrName string = acr.outputs.acrName
+
+@description('Default hostname of the Static Web App')
+output swaDefaultHostname string = swa.outputs.defaultHostname
+
+@description('Resource ID of the Static Web App')
+output swaResourceId string = swa.outputs.staticSiteId

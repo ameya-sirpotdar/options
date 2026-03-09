@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -162,6 +162,47 @@ class OptionsContractRecord(BaseModel):
         populate_by_name = True
         # Serialise datetime objects as ISO-8601 strings for ATS compatibility.
         json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+class TradabilityMetrics(BaseModel):
+    """
+    Extracted metrics used as inputs to the tradability scoring formula.
+    """
+
+    symbol: str = Field(..., description="Option contract symbol (RowKey).")
+    underlying_symbol: str = Field(..., description="Underlying equity/ETF symbol.")
+    delta: Optional[float] = Field(None, description="Delta greek value.")
+    theta: Optional[float] = Field(None, description="Theta greek value (time decay per day).")
+    iv: Optional[float] = Field(None, description="Implied volatility (annualised %).")
+    premium: Optional[float] = Field(None, description="Mid-point mark price used as premium.")
+
+
+class TradabilityScore(BaseModel):
+    """
+    Tradability score computed for a single options contract candidate.
+    """
+
+    symbol: str = Field(..., description="Option contract symbol (RowKey).")
+    underlying_symbol: str = Field(..., description="Underlying equity/ETF symbol.")
+    score: float = Field(..., description="Weighted tradability score.")
+    delta: Optional[float] = Field(None, description="Delta used in scoring.")
+    theta: Optional[float] = Field(None, description="Theta used in scoring.")
+    iv: Optional[float] = Field(None, description="Implied volatility used in scoring.")
+    premium: Optional[float] = Field(None, description="Premium used in scoring.")
+
+
+class BestTradeResponse(BaseModel):
+    """
+    Response payload returned by the GET /trades/best endpoint.
+    """
+
+    best_candidate: Optional[TradabilityScore] = Field(
+        None, description="The highest-scoring trade candidate, or null if none available."
+    )
+    ranked_candidates: List[TradabilityScore] = Field(
+        default_factory=list,
+        description="All evaluated candidates ordered from highest to lowest score.",
+    )
 
     # ------------------------------------------------------------------
     # Convenience helpers
