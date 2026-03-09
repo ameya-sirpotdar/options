@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -81,6 +82,9 @@ jobs:
     env:
       ACR_NAME: ${{ secrets.ACR_NAME }}
       AKS_CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'production' }}
 
     steps:
@@ -120,6 +124,7 @@ jobs:
           push: true
           tags: |
             ${{ env.ACR_NAME }}.azurecr.io/backend:${{ github.sha }}
+            ${{ env.ACR_NAME }}.azurecr.io/backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -138,13 +143,14 @@ jobs:
           # Manifests must use __IMAGE_TAG__ and __ACR_NAME__ as delimited placeholders
           # (e.g. image: __ACR_NAME__.azurecr.io/backend:__IMAGE_TAG__) to avoid
           # accidental substitution in comments or unrelated config values.
-          MANIFESTS=$(find infra/k8s/backend -name '*.yaml' -o -name '*.yml')
-          echo "$MANIFESTS" | while IFS= read -r f; do
+          set -euo pipefail
+          mapfile -t MANIFESTS < <(find infra/k8s/backend -name '*.yaml' -o -name '*.yml')
+          for f in "${MANIFESTS[@]}"; do
             grep -q '__IMAGE_TAG__\|__ACR_NAME__' "$f" || { echo "ERROR: No placeholders in $f"; exit 1; }
           done
-          echo "$MANIFESTS" | xargs sed -i \
-            -e "s|__IMAGE_TAG__|${IMAGE_TAG}|g" \
-            -e "s|__ACR_NAME__|${ACR_NAME}|g"
+          for f in "${MANIFESTS[@]}"; do
+            sed -i -e "s|__IMAGE_TAG__|${IMAGE_TAG}|g" -e "s|__ACR_NAME__|${ACR_NAME}|g" "$f"
+          done
 
       - name: Validate Kubernetes manifests (dry-run)
         run: kubectl apply -f infra/k8s/backend/ --dry-run=server
@@ -154,6 +160,7 @@ jobs:
         run: kubectl apply -f infra/k8s/backend/ --server-side
 
       - name: Wait for rollout to complete
+        id: rollout_wait
         env:
           DEPLOYMENT_NAME: ${{ vars.BACKEND_DEPLOYMENT_NAME || 'backend' }}
         run: |
@@ -161,18 +168,19 @@ jobs:
             -n ${{ env.K8S_NAMESPACE }} --timeout=5m
 
       - name: Rollback on failure
-        if: failure() && steps.apply.conclusion == 'success'
+        if: failure() && steps.apply.conclusion == 'success' && steps.rollout_wait.conclusion == 'failure'
         run: |
           kubectl rollout undo deployment/${{ vars.BACKEND_DEPLOYMENT_NAME || 'backend' }} \
             -n ${{ env.K8S_NAMESPACE }}
 
       - name: Smoke test backend
         run: |
-          BACKEND_URL=$(kubectl get ingress backend -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          INGRESS_NAME=${{ vars.BACKEND_INGRESS_NAME || 'backend' }}
+          BACKEND_URL=$(kubectl get ingress ${INGRESS_NAME} -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
           if [ -z "$BACKEND_URL" ]; then
             echo "ERROR: Ingress hostname not yet assigned" && exit 1
           fi
-          curl --fail --retry 5 --retry-delay 5 --max-time 10 "https://${BACKEND_URL}/health"
+          curl --fail --retry 10 --retry-delay 10 --retry-connrefused --max-time 15 "https://${BACKEND_URL}/health"
 
   deploy-frontend:
     name: Deploy Frontend
