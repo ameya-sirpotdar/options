@@ -17,11 +17,12 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Options Polling API", version="1.0.0")
 
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+_allow_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-    ],
+    allow_origins=_allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

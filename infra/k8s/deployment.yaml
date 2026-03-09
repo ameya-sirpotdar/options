@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: options-backend
-          image: ${ACR_LOGIN_SERVER}/options-backend:${IMAGE_TAG}
+          image: __ACR_NAME__.azurecr.io/backend:__IMAGE_TAG__
           ports:
             - containerPort: 8000
           env:

@@ -24,6 +24,9 @@ param storageAccountName string = 'stoptions${environmentName}'
 @description('Name of the Azure Container Registry')
 param acrName string = 'acroptions${environmentName}'
 
+@description('Name of the Azure Key Vault')
+param keyVaultName string = 'kv-options-${environmentName}'
+
 @description('SKU for the Azure Container Registry')
 param acrSku string = 'Basic'
 
@@ -72,7 +75,7 @@ module acr 'modules/acr.bicep' = {
   params: {
     location: location
     acrName: acrName
-    acrSku: acrSku
+    skuName: acrSku
   }
 }
 
@@ -106,6 +109,21 @@ module storage 'modules/storage.bicep' = {
   params: {
     location: location
     storageAccountName: storageAccountName
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Key Vault module
+// ---------------------------------------------------------------------------
+
+module keyvault 'modules/keyvault.bicep' = {
+  name: 'keyvault-deployment'
+  scope: rg
+  params: {
+    location: location
+    keyVaultName: keyVaultName
+    tags: tags
+    readerPrincipalId: aks.outputs.kubeletIdentityObjectId
   }
 }
 
@@ -150,3 +168,9 @@ output swaDefaultHostname string = swa.outputs.defaultHostname
 
 @description('Resource ID of the Static Web App')
 output swaResourceId string = swa.outputs.staticSiteId
+
+@description('URI of the Azure Key Vault')
+output keyVaultUri string = keyvault.outputs.keyVaultUri
+
+@description('Name of the Azure Key Vault')
+output keyVaultName string = keyvault.outputs.keyVaultName
