@@ -93,7 +93,7 @@ module acrPullRoleAssignment 'modules/roleassignment.bicep' = {
   scope: resourceGroup(resourceGroupName)
   params: {
     acrName: acr.outputs.acrName
-    aksPrincipalId: aks.outputs.kubeletPrincipalId
+    principalId: aks.outputs.kubeletPrincipalId
     roleDefinitionId: acrPullRoleDefinitionId
   }
 }
