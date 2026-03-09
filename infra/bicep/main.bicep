@@ -96,6 +96,10 @@ module acrPullRoleAssignment 'modules/roleassignment.bicep' = {
     aksPrincipalId: aks.outputs.kubeletPrincipalId
     roleDefinitionId: acrPullRoleDefinitionId
   }
+  dependsOn: [
+    acr
+    aks
+  ]
 }
 
 // ---------------------------------------------------------------------------
