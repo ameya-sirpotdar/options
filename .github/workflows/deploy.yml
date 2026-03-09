@@ -189,11 +189,13 @@ jobs:
           NAMESPACE: ${{ env.K8S_NAMESPACE }}
           AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
           KEY_VAULT_URL: ${{ secrets.KEY_VAULT_URL }}
+          ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
         run: |
           set -euo pipefail
           kubectl create secret generic options-backend-secrets \
             --from-literal=azure-storage-connection-string="${AZURE_STORAGE_CONNECTION_STRING}" \
             --from-literal=key-vault-url="${KEY_VAULT_URL}" \
+            --from-literal=allowed-origins="${ALLOWED_ORIGINS}" \
             --namespace="${NAMESPACE}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
@@ -250,14 +252,10 @@ jobs:
           INGRESS_NAME: ${{ vars.BACKEND_INGRESS_NAME || 'backend' }}
         run: |
           set -euo pipefail
-          for i in $(seq 1 12); do
-            BACKEND_URL=$(kubectl get ingress "${INGRESS_NAME}" -n "${{ env.K8S_NAMESPACE }}" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
-            [ -n "$BACKEND_URL" ] && break
-            echo "Waiting for ingress hostname... attempt $i/12"
-            sleep 10
-          done
+          # Use the first host from the ingress spec (nip.io hostname) for TLS smoke test.
+          BACKEND_URL=$(kubectl get ingress "${INGRESS_NAME}" -n "${{ env.K8S_NAMESPACE }}" -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)
           if [ -z "$BACKEND_URL" ]; then
-            echo "ERROR: Ingress hostname not assigned after 2 minutes" && exit 1
+            echo "ERROR: No ingress host found on '${INGRESS_NAME}'" && exit 1
           fi
           # Retry loop to wait for TLS certificate provisioning before running the smoke test.
           # --insecure is intentionally avoided; instead we poll until the cert is valid.

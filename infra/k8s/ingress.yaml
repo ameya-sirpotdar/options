@@ -7,9 +7,15 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
+  tls:
+    - hosts:
+        - backend.20.106.111.251.nip.io
+      secretName: backend-tls
   rules:
-    - http:
+    - host: backend.20.106.111.251.nip.io
+      http:
         paths:
           - path: /
             pathType: Prefix
