@@ -1,0 +1,324 @@
+name: Deploy Infrastructure and Applications
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+
+jobs:
+  changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-latest
+    outputs:
+      infra: ${{ steps.filter.outputs.infra }}
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          filters: |
+            infra:
+              - 'infra/bicep/**'
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+
+  deploy-infra:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.infra == 'true'
+    environment: production
+    timeout-minutes: 60
+    concurrency:
+      group: deploy-infra-production
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@6c251865b4e6290e7b78be643ea2d005bc51f69a # v2.1.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Bicep template
+        uses: azure/arm-deploy@e792c9a34eb6a018b445eff5f1a6394f0c6e1e2d # v2.0.0
+        with:
+          scope: subscription
+          region: ${{ env.AZURE_LOCATION }}
+          template: infra/bicep/main.bicep
+          parameters: location=${{ env.AZURE_LOCATION }} resourceGroupName=${{ env.AZURE_RESOURCE_GROUP }}
+          deploymentName: gh-${{ github.run_id }}-${{ github.run_attempt }}
+          failOnStdErr: true
+
+  deploy-backend:
+    name: Deploy Backend
+    runs-on: ubuntu-latest
+    needs: [changes, deploy-infra]
+    # IMPORTANT: always() is required here. Without it, GitHub auto-skips this job
+    # when deploy-infra is skipped (no infra changes). The explicit result checks
+    # below provide the actual gate logic. Do NOT remove always().
+    # 'cancelled' is excluded explicitly so a cancelled infra run causes a hard failure
+    # rather than a silent skip.
+    if: |
+      always() &&
+      needs.changes.outputs.backend == 'true' &&
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped')
+    environment: production
+    timeout-minutes: 30
+    concurrency:
+      group: deploy-backend-production
+      cancel-in-progress: false
+    env:
+      K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'production' }}
+      BACKEND_DEPLOYMENT_LABEL: ${{ vars.BACKEND_DEPLOYMENT_LABEL || 'app=backend' }}
+
+    steps:
+      - name: Validate required secrets
+        env:
+          ACR_NAME: ${{ secrets.ACR_NAME }}
+          AKS_CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+        run: |
+          set +x  # prevent accidental value echo via xtrace
+          missing=0
+          for secret in ACR_NAME AKS_CLUSTER_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+            if [ -z "${!secret}" ]; then
+              echo "ERROR: Required secret '$secret' is not set"
+              missing=1
+            fi
+          done
+          for var in AZURE_RESOURCE_GROUP AZURE_LOCATION; do
+            if [ -z "${!var}" ]; then
+              echo "ERROR: Required variable '$var' is not set"
+              missing=1
+            fi
+          done
+          [ $missing -eq 0 ] || exit 1
+
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # Each job performs its own OIDC login for intentional isolation.
+      # Requires a federated credential in Entra ID with subject:
+      # repo:<org>/<repo>:environment:production
+      - name: Azure Login (OIDC)
+        uses: azure/login@6c251865b4e6290e7b78be643ea2d005bc51f69a # v2.1.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Log in to Azure Container Registry
+        env:
+          ACR_NAME: ${{ secrets.ACR_NAME }}
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+
+      - name: Build and push backend Docker image
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v5.4.0
+        env:
+          ACR_NAME: ${{ secrets.ACR_NAME }}
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ACR_NAME }}.azurecr.io/backend:${{ github.sha }}
+            ${{ secrets.ACR_NAME }}.azurecr.io/backend:latest
+            ${{ secrets.ACR_NAME }}.azurecr.io/backend:production
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@4e5aec273183a197b181314721843e047123d9dd # v3.0.0
+        with:
+          resource-group: ${{ env.AZURE_RESOURCE_GROUP }}
+          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
+
+      - name: Substitute image tag in Kubernetes manifests
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          ACR_NAME: ${{ secrets.ACR_NAME }}
+        run: |
+          # Capture file list once to ensure consistency across check and substitution.
+          # Manifests must use __IMAGE_TAG__ and __ACR_NAME__ as delimited placeholders
+          # (e.g. image: __ACR_NAME__.azurecr.io/backend:__IMAGE_TAG__) to avoid
+          # accidental substitution in comments or unrelated config values.
+          set -euo pipefail
+          mapfile -t MANIFESTS < <(find infra/k8s/backend \( -name '*.yaml' -o -name '*.yml' \) -type f)
+          for f in "${MANIFESTS[@]}"; do
+            grep -q '__IMAGE_TAG__' "$f" || { echo "ERROR: Missing __IMAGE_TAG__ in $f"; exit 1; }
+            grep -q '__ACR_NAME__' "$f" || { echo "ERROR: Missing __ACR_NAME__ in $f"; exit 1; }
+          done
+          for f in "${MANIFESTS[@]}"; do
+            sed -i -e "s|__IMAGE_TAG__|${IMAGE_TAG}|g" -e "s|__ACR_NAME__|${ACR_NAME}|g" "$f"
+          done
+
+      - name: Validate Kubernetes manifests (dry-run)
+        # Server-side dry-run is used intentionally to exercise admission webhooks.
+        # --request-timeout guards against cluster unavailability blocking the pipeline.
+        env:
+          NAMESPACE: ${{ env.K8S_NAMESPACE }}
+        run: kubectl apply -f infra/k8s/backend/ --dry-run=server --namespace="$NAMESPACE" --request-timeout=30s
+
+      - name: Apply Kubernetes manifests
+        id: apply
+        env:
+          NAMESPACE: ${{ env.K8S_NAMESPACE }}
+        run: kubectl apply -f infra/k8s/backend/ --server-side --namespace="$NAMESPACE"
+
+      - name: Wait for rollout to complete
+        id: rollout_wait
+        env:
+          NAMESPACE: ${{ env.K8S_NAMESPACE }}
+          DEPLOY_LABEL: ${{ env.BACKEND_DEPLOYMENT_LABEL }}
+          ROLLOUT_TIMEOUT: ${{ vars.ROLLOUT_TIMEOUT || '5m' }}
+        run: |
+          set -euo pipefail
+          mapfile -t DEPLOYS < <(kubectl get deployments -n "$NAMESPACE" -l "$DEPLOY_LABEL" -o name)
+          if [ ${#DEPLOYS[@]} -eq 0 ]; then
+            echo "ERROR: No backend deployments found in namespace '$NAMESPACE' with label '$DEPLOY_LABEL'" && exit 1
+          fi
+          pids=()
+          for deploy in "${DEPLOYS[@]}"; do
+            kubectl rollout status "$deploy" -n "$NAMESPACE" --timeout="$ROLLOUT_TIMEOUT" &
+            pids+=("$!")
+          done
+          failed=0
+          for pid in "${pids[@]}"; do
+            wait "$pid" || failed=1
+          done
+          [ $failed -eq 0 ] || exit 1
+
+      - name: Rollback on failure
+        if: failure() && steps.apply.conclusion == 'success' && steps.rollout_wait.conclusion == 'failure'
+        env:
+          NAMESPACE: ${{ env.K8S_NAMESPACE }}
+          DEPLOY_LABEL: ${{ env.BACKEND_DEPLOYMENT_LABEL }}
+        run: |
+          set -euo pipefail
+          mapfile -t DEPLOYS < <(kubectl get deployments -n "$NAMESPACE" -l "$DEPLOY_LABEL" -o name)
+          for deploy in "${DEPLOYS[@]}"; do
+            kubectl rollout undo "$deploy" -n "$NAMESPACE"
+          done
+
+      - name: Smoke test backend
+        env:
+          INGRESS_NAME: ${{ vars.BACKEND_INGRESS_NAME || 'backend' }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 12); do
+            BACKEND_URL=$(kubectl get ingress "${INGRESS_NAME}" -n "${{ env.K8S_NAMESPACE }}" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            [ -n "$BACKEND_URL" ] && break
+            echo "Waiting for ingress hostname... attempt $i/12"
+            sleep 10
+          done
+          if [ -z "$BACKEND_URL" ]; then
+            echo "ERROR: Ingress hostname not assigned after 2 minutes" && exit 1
+          fi
+          # Retry loop to wait for TLS certificate provisioning before running the smoke test.
+          # --insecure is intentionally avoided; instead we poll until the cert is valid.
+          # TODO: automate cert-readiness signalling to remove the need for this retry loop.
+          max_attempts=10
+          attempt=0
+          until curl --fail --max-time 15 "https://${BACKEND_URL}/health"; do
+            attempt=$((attempt + 1))
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "ERROR: Smoke test failed after $max_attempts attempts" && exit 1
+            fi
+            echo "Attempt $attempt/$max_attempts — waiting 30s before retry..."
+            sleep 30
+          done
+
+  deploy-frontend:
+    name: Deploy Frontend
+    runs-on: ubuntu-latest
+    # deploy-backend and deploy-frontend both depend only on deploy-infra (not each other),
+    # so they run in parallel once infra completes. This is intentional.
+    needs: [changes, deploy-infra]
+    # always() prevents GitHub from auto-skipping this job when deploy-infra is skipped
+    # (e.g. no infra changes). The explicit result checks then gate on actual outcomes.
+    # 'cancelled' is excluded explicitly so a cancelled infra run causes a hard failure
+    # rather than a silent skip.
+    if: |
+      always() &&
+      needs.changes.outputs.frontend == 'true' &&
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped') &&
+      needs.deploy-infra.result != 'cancelled'
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Validate build environment
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+        run: |
+          if [ -z "$VITE_API_BASE_URL" ]; then
+            echo "ERROR: VITE_API_BASE_URL is not set" && exit 1
+          fi
+
+      - name: Build Vue application
+        working-directory: ./frontend
+        run: npm run build
+        env:
+          # VITE_API_BASE_URL is not a secret — it is a non-sensitive build-time config value.
+          # It is stored as a GitHub Actions variable (vars.*) rather than a secret so it
+          # is not masked in logs and its non-sensitive nature is explicit.
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+
+      # Each job performs its own OIDC login for intentional isolation.
+      - name: Azure Login (OIDC)
+        uses: azure/login@6c251865b4e6290e7b78be643ea2d005bc51f69a # v2.1.1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1.5.0
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: /
+          output_location: frontend/dist
+          skip_app_build: true
