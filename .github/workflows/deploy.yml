@@ -90,7 +90,7 @@ jobs:
       cancel-in-progress: false
     env:
       K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'production' }}
-      BACKEND_DEPLOYMENT_LABEL: ${{ vars.BACKEND_DEPLOYMENT_LABEL || 'app=backend' }}
+      BACKEND_DEPLOYMENT_LABEL: ${{ vars.BACKEND_DEPLOYMENT_LABEL || 'app=options-backend' }}
 
     steps:
       - name: Validate required secrets
@@ -100,12 +100,14 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+          KEY_VAULT_URL: ${{ secrets.KEY_VAULT_URL }}
           AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
         run: |
           set +x  # prevent accidental value echo via xtrace
           missing=0
-          for secret in ACR_NAME AKS_CLUSTER_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+          for secret in ACR_NAME AKS_CLUSTER_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_STORAGE_CONNECTION_STRING KEY_VAULT_URL; do
             if [ -z "${!secret}" ]; then
               echo "ERROR: Required secret '$secret' is not set"
               missing=1
@@ -156,7 +158,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Set AKS context
-        uses: azure/aks-set-context@4e5aec273183a197b181314721843e047123d9dd # v3.0.0
+        uses: azure/aks-set-context@v4
         with:
           resource-group: ${{ env.AZURE_RESOURCE_GROUP }}
           cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
@@ -166,32 +168,45 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
           ACR_NAME: ${{ secrets.ACR_NAME }}
         run: |
-          # Capture file list once to ensure consistency across check and substitution.
-          # Manifests must use __IMAGE_TAG__ and __ACR_NAME__ as delimited placeholders
-          # (e.g. image: __ACR_NAME__.azurecr.io/backend:__IMAGE_TAG__) to avoid
-          # accidental substitution in comments or unrelated config values.
+          # Only process manifests that contain __IMAGE_TAG__ (i.e. deployment.yaml).
+          # Other manifests (ingress, service, secrets) do not require image substitution.
           set -euo pipefail
-          mapfile -t MANIFESTS < <(find infra/k8s/backend \( -name '*.yaml' -o -name '*.yml' \) -type f)
+          mapfile -t MANIFESTS < <(grep -rl '__IMAGE_TAG__' infra/k8s/)
+          if [ ${#MANIFESTS[@]} -eq 0 ]; then
+            echo "ERROR: No manifests with __IMAGE_TAG__ found in infra/k8s/" && exit 1
+          fi
           for f in "${MANIFESTS[@]}"; do
-            grep -q '__IMAGE_TAG__' "$f" || { echo "ERROR: Missing __IMAGE_TAG__ in $f"; exit 1; }
             grep -q '__ACR_NAME__' "$f" || { echo "ERROR: Missing __ACR_NAME__ in $f"; exit 1; }
           done
           for f in "${MANIFESTS[@]}"; do
             sed -i -e "s|__IMAGE_TAG__|${IMAGE_TAG}|g" -e "s|__ACR_NAME__|${ACR_NAME}|g" "$f"
           done
 
+      - name: Create or update Kubernetes secret
+        env:
+          NAMESPACE: ${{ env.K8S_NAMESPACE }}
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+          KEY_VAULT_URL: ${{ secrets.KEY_VAULT_URL }}
+        run: |
+          set -euo pipefail
+          kubectl create secret generic options-backend-secrets \
+            --from-literal=azure-storage-connection-string="${AZURE_STORAGE_CONNECTION_STRING}" \
+            --from-literal=key-vault-url="${KEY_VAULT_URL}" \
+            --namespace="${NAMESPACE}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Validate Kubernetes manifests (dry-run)
         # Server-side dry-run is used intentionally to exercise admission webhooks.
         # --request-timeout guards against cluster unavailability blocking the pipeline.
         env:
           NAMESPACE: ${{ env.K8S_NAMESPACE }}
-        run: kubectl apply -f infra/k8s/backend/ --dry-run=server --namespace="$NAMESPACE" --request-timeout=30s
+        run: kubectl apply -f infra/k8s/ --dry-run=server --namespace="$NAMESPACE" --request-timeout=30s
 
       - name: Apply Kubernetes manifests
         id: apply
         env:
           NAMESPACE: ${{ env.K8S_NAMESPACE }}
-        run: kubectl apply -f infra/k8s/backend/ --server-side --namespace="$NAMESPACE"
+        run: kubectl apply -f infra/k8s/ --server-side --namespace="$NAMESPACE"
 
       - name: Wait for rollout to complete
         id: rollout_wait
@@ -282,10 +297,10 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: frontend/vue-app/package-lock.json
 
       - name: Install dependencies
-        working-directory: ./frontend
+        working-directory: ./frontend/vue-app
         run: npm ci
 
       - name: Validate build environment
@@ -297,7 +312,7 @@ jobs:
           fi
 
       - name: Build Vue application
-        working-directory: ./frontend
+        working-directory: ./frontend/vue-app
         run: npm run build
         env:
           # VITE_API_BASE_URL is not a secret — it is a non-sensitive build-time config value.
@@ -319,6 +334,6 @@ jobs:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: upload
-          app_location: /
-          output_location: frontend/dist
+          app_location: frontend/vue-app
+          output_location: dist
           skip_app_build: true
