@@ -154,6 +154,8 @@ jobs:
             ${{ secrets.ACR_NAME }}.azurecr.io/backend:${{ github.sha }}
             ${{ secrets.ACR_NAME }}.azurecr.io/backend:latest
             ${{ secrets.ACR_NAME }}.azurecr.io/backend:production
+          cache-from: type=registry,ref=${{ secrets.ACR_NAME }}.azurecr.io/backend:latest
+          cache-to: type=inline
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
