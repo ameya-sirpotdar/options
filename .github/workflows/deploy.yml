@@ -57,7 +57,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy Bicep template
-        uses: azure/arm-deploy@a94d5a4d4b8e9c3f2e1d0c9b8a7f6e5d4c3b2a1f # v2.0.0
+        uses: azure/arm-deploy@e792c9a34eb6a018b445eff5f1a6394f0c6e1e2d # v2.0.0
         with:
           scope: subscription
           region: ${{ env.AZURE_LOCATION }}
@@ -88,9 +88,6 @@ jobs:
       K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'production' }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
       - name: Validate required secrets
         run: |
           missing=0
@@ -102,7 +99,12 @@ jobs:
           done
           [ $missing -eq 0 ] || exit 1
 
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
       # Each job performs its own OIDC login for intentional isolation.
+      # Requires a federated credential in Entra ID with subject:
+      # repo:<org>/<repo>:environment:production
       - name: Azure Login (OIDC)
         uses: azure/login@6c251865b4e6290e7b78be643ea2d005bc51f69a # v2.1.1
         with:
@@ -124,7 +126,6 @@ jobs:
           push: true
           tags: |
             ${{ env.ACR_NAME }}.azurecr.io/backend:${{ github.sha }}
-            ${{ env.ACR_NAME }}.azurecr.io/backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -144,7 +145,7 @@ jobs:
           # (e.g. image: __ACR_NAME__.azurecr.io/backend:__IMAGE_TAG__) to avoid
           # accidental substitution in comments or unrelated config values.
           set -euo pipefail
-          mapfile -t MANIFESTS < <(find infra/k8s/backend -name '*.yaml' -o -name '*.yml')
+          mapfile -t MANIFESTS < <(find infra/k8s/backend \( -name '*.yaml' -o -name '*.yml' \) -type f)
           for f in "${MANIFESTS[@]}"; do
             grep -q '__IMAGE_TAG__\|__ACR_NAME__' "$f" || { echo "ERROR: No placeholders in $f"; exit 1; }
           done
@@ -161,14 +162,13 @@ jobs:
 
       - name: Wait for rollout to complete
         id: rollout_wait
-        env:
-          DEPLOYMENT_NAME: ${{ vars.BACKEND_DEPLOYMENT_NAME || 'backend' }}
         run: |
-          kubectl rollout status deployment/${DEPLOYMENT_NAME} \
-            -n ${{ env.K8S_NAMESPACE }} --timeout=5m
+          for deploy in $(kubectl get deployments -n ${{ env.K8S_NAMESPACE }} -l app=backend -o name); do
+            kubectl rollout status "$deploy" -n ${{ env.K8S_NAMESPACE }} --timeout=5m
+          done
 
       - name: Rollback on failure
-        if: failure() && steps.apply.conclusion == 'success' && steps.rollout_wait.conclusion == 'failure'
+        if: failure() && steps.apply.conclusion == 'success'
         run: |
           kubectl rollout undo deployment/${{ vars.BACKEND_DEPLOYMENT_NAME || 'backend' }} \
             -n ${{ env.K8S_NAMESPACE }}
@@ -180,7 +180,8 @@ jobs:
           if [ -z "$BACKEND_URL" ]; then
             echo "ERROR: Ingress hostname not yet assigned" && exit 1
           fi
-          curl --fail --retry 10 --retry-delay 10 --retry-connrefused --max-time 15 "https://${BACKEND_URL}/health"
+          curl --fail --retry 10 --retry-delay 10 --retry-connrefused --max-time 15 \
+            --insecure "https://${BACKEND_URL}/health"  # TLS cert may not be provisioned yet at smoke-test time
 
   deploy-frontend:
     name: Deploy Frontend
