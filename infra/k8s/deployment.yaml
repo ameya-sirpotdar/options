@@ -22,6 +22,16 @@ spec:
           env:
             - name: PYTHONUNBUFFERED
               value: "1"
+            - name: AZURE_STORAGE_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: options-backend-secrets
+                  key: azure-storage-connection-string
+            - name: KEY_VAULT_URL
+              valueFrom:
+                secretKeyRef:
+                  name: options-backend-secrets
+                  key: key-vault-url
           livenessProbe:
             httpGet:
               path: /health
