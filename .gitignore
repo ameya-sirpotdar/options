@@ -60,8 +60,11 @@ serviceaccount.json
 kubeconfig
 *.kubeconfig
 
-# Pipeline state
+# Pipeline state (runtime artefacts – store in Azure Blob Storage or GitHub Actions cache instead)
 .pipeline_state/
+
+# Implementation / planning documents (use wiki, Notion, or docs/adr/ instead)
+.plans/
 
 # Logs
 *.log
