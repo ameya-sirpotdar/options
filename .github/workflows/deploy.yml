@@ -44,6 +44,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.infra == 'true'
     environment: production
+    concurrency:
+      group: deploy-infra-production
+      cancel-in-progress: false
 
     steps:
       - name: Checkout repository
@@ -113,7 +116,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Log in to Azure Container Registry
-        run: az acr login --name ${{ env.ACR_NAME }}
+        run: az acr login --name "$ACR_NAME"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
@@ -126,6 +129,7 @@ jobs:
           push: true
           tags: |
             ${{ env.ACR_NAME }}.azurecr.io/backend:${{ github.sha }}
+            ${{ env.ACR_NAME }}.azurecr.io/backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -147,7 +151,8 @@ jobs:
           set -euo pipefail
           mapfile -t MANIFESTS < <(find infra/k8s/backend \( -name '*.yaml' -o -name '*.yml' \) -type f)
           for f in "${MANIFESTS[@]}"; do
-            grep -q '__IMAGE_TAG__\|__ACR_NAME__' "$f" || { echo "ERROR: No placeholders in $f"; exit 1; }
+            grep -q '__IMAGE_TAG__' "$f" || { echo "ERROR: Missing __IMAGE_TAG__ in $f"; exit 1; }
+            grep -q '__ACR_NAME__' "$f" || { echo "ERROR: Missing __ACR_NAME__ in $f"; exit 1; }
           done
           for f in "${MANIFESTS[@]}"; do
             sed -i -e "s|__IMAGE_TAG__|${IMAGE_TAG}|g" -e "s|__ACR_NAME__|${ACR_NAME}|g" "$f"
@@ -170,8 +175,9 @@ jobs:
       - name: Rollback on failure
         if: failure() && steps.apply.conclusion == 'success'
         run: |
-          kubectl rollout undo deployment/${{ vars.BACKEND_DEPLOYMENT_NAME || 'backend' }} \
-            -n ${{ env.K8S_NAMESPACE }}
+          for deploy in $(kubectl get deployments -n ${{ env.K8S_NAMESPACE }} -l app=backend -o name); do
+            kubectl rollout undo "$deploy" -n ${{ env.K8S_NAMESPACE }}
+          done
 
       - name: Smoke test backend
         run: |
@@ -180,8 +186,19 @@ jobs:
           if [ -z "$BACKEND_URL" ]; then
             echo "ERROR: Ingress hostname not yet assigned" && exit 1
           fi
-          curl --fail --retry 10 --retry-delay 10 --retry-connrefused --max-time 15 \
-            --insecure "https://${BACKEND_URL}/health"  # TLS cert may not be provisioned yet at smoke-test time
+          # Retry loop to wait for TLS certificate provisioning before running the smoke test.
+          # --insecure is intentionally avoided; instead we poll until the cert is valid.
+          # TODO: automate cert-readiness signalling to remove the need for this retry loop.
+          max_attempts=10
+          attempt=0
+          until curl --fail --max-time 15 "https://${BACKEND_URL}/health"; do
+            attempt=$((attempt + 1))
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "ERROR: Smoke test failed after $max_attempts attempts" && exit 1
+            fi
+            echo "Attempt $attempt/$max_attempts failed, retrying in 15s..."
+            sleep 15
+          done
 
   deploy-frontend:
     name: Deploy Frontend
@@ -189,10 +206,15 @@ jobs:
     # deploy-backend and deploy-frontend both depend only on deploy-infra (not each other),
     # so they run in parallel once infra completes. This is intentional.
     needs: [changes, deploy-infra]
+    # always() prevents GitHub from auto-skipping this job when deploy-infra is skipped
+    # (e.g. no infra changes). The explicit result checks then gate on actual outcomes.
+    # 'cancelled' is excluded explicitly so a cancelled infra run causes a hard failure
+    # rather than a silent skip.
     if: |
       always() &&
       needs.changes.outputs.frontend == 'true' &&
-      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped')
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped') &&
+      needs.deploy-infra.result != 'cancelled'
     environment: production
 
     steps:
