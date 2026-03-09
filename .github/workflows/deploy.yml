@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 env:
-  AZURE_RESOURCE_GROUP: rg-production
-  AZURE_LOCATION: eastus
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP || 'rg-production' }}
+  AZURE_LOCATION: ${{ vars.AZURE_LOCATION || 'eastus' }}
 
 jobs:
   changes:
@@ -65,7 +65,7 @@ jobs:
           scope: subscription
           region: ${{ env.AZURE_LOCATION }}
           template: infra/bicep/main.bicep
-          parameters: location=${{ env.AZURE_LOCATION }}
+          parameters: location=${{ env.AZURE_LOCATION }} resourceGroupName=${{ env.AZURE_RESOURCE_GROUP }}
           deploymentName: gh-${{ github.run_id }}-${{ github.run_attempt }}
           failOnStdErr: true
 
@@ -94,10 +94,11 @@ jobs:
     steps:
       - name: Validate required secrets
         run: |
+          set +x  # prevent accidental value echo via xtrace
           missing=0
           for var in ACR_NAME AKS_CLUSTER_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
             if [ -z "${!var}" ]; then
-              echo "ERROR: One or more required secrets/variables are not set"
+              echo "ERROR: Required secret/variable '$var' is not set"
               missing=1
             fi
           done
@@ -130,6 +131,7 @@ jobs:
           push: true
           tags: |
             ${{ env.ACR_NAME }}.azurecr.io/backend:${{ github.sha }}
+            ${{ env.ACR_NAME }}.azurecr.io/backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -159,7 +161,9 @@ jobs:
           done
 
       - name: Validate Kubernetes manifests (dry-run)
-        run: kubectl apply -f infra/k8s/backend/ --dry-run=server --namespace=${{ env.K8S_NAMESPACE }}
+        # Server-side dry-run is used intentionally to exercise admission webhooks.
+        # --request-timeout guards against cluster unavailability blocking the pipeline.
+        run: kubectl apply -f infra/k8s/backend/ --dry-run=server --namespace=${{ env.K8S_NAMESPACE }} --request-timeout=30s
 
       - name: Apply Kubernetes manifests
         id: apply
@@ -173,12 +177,19 @@ jobs:
           if [ ${#DEPLOYS[@]} -eq 0 ]; then
             echo "ERROR: No backend deployments found in namespace ${{ env.K8S_NAMESPACE }}" && exit 1
           fi
+          pids=()
           for deploy in "${DEPLOYS[@]}"; do
-            kubectl rollout status "$deploy" -n ${{ env.K8S_NAMESPACE }} --timeout=5m
+            kubectl rollout status "$deploy" -n ${{ env.K8S_NAMESPACE }} --timeout=5m &
+            pids+=("$!")
           done
+          failed=0
+          for pid in "${pids[@]}"; do
+            wait "$pid" || failed=1
+          done
+          [ $failed -eq 0 ] || exit 1
 
       - name: Rollback on failure
-        if: failure() && (steps.apply.conclusion == 'success' || steps.apply.conclusion == 'failure')
+        if: failure() && steps.apply.conclusion == 'success'
         run: |
           set -euo pipefail
           mapfile -t DEPLOYS < <(kubectl get deployments -n ${{ env.K8S_NAMESPACE }} -l app=backend -o name)
@@ -191,9 +202,14 @@ jobs:
           INGRESS_NAME: ${{ vars.BACKEND_INGRESS_NAME || 'backend' }}
         run: |
           set -euo pipefail
-          BACKEND_URL=$(kubectl get ingress "${INGRESS_NAME}" -n "${{ env.K8S_NAMESPACE }}" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          for i in $(seq 1 12); do
+            BACKEND_URL=$(kubectl get ingress "${INGRESS_NAME}" -n "${{ env.K8S_NAMESPACE }}" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            [ -n "$BACKEND_URL" ] && break
+            echo "Waiting for ingress hostname... attempt $i/12"
+            sleep 10
+          done
           if [ -z "$BACKEND_URL" ]; then
-            echo "ERROR: Ingress hostname not yet assigned" && exit 1
+            echo "ERROR: Ingress hostname not assigned after 2 minutes" && exit 1
           fi
           # Retry loop to wait for TLS certificate provisioning before running the smoke test.
           # --insecure is intentionally avoided; instead we poll until the cert is valid.
