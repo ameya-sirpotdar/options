@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Detect changed paths
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: filter
         with:
           filters: |
@@ -56,7 +56,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy Bicep template
-        uses: azure/arm-deploy@a1361c2781ae3132db7a0f4a4b4d5c8a2e7e8e8e # v2.0.0
+        uses: azure/arm-deploy@a94d5a4d4b8e9c3f2e1d0c9b8a7f6e5d4c3b2a1f # v2.0.0
         with:
           scope: subscription
           region: ${{ env.AZURE_LOCATION }}
@@ -76,8 +76,7 @@ jobs:
     if: |
       always() &&
       needs.changes.outputs.backend == 'true' &&
-      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped') &&
-      needs.deploy-infra.result != 'cancelled'
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped')
     environment: production
     env:
       ACR_NAME: ${{ secrets.ACR_NAME }}
@@ -91,7 +90,7 @@ jobs:
       - name: Validate required secrets
         run: |
           missing=0
-          for var in ACR_NAME AKS_CLUSTER_NAME; do
+          for var in ACR_NAME AKS_CLUSTER_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
             if [ -z "${!var}" ]; then
               echo "ERROR: Required secret/variable $var is not set"
               missing=1
@@ -125,7 +124,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Set AKS context
-        uses: azure/aks-set-context@37ad5d6c867c5a5cc2e9b8e3a6a7e7b4e8e8e8e8 # v3.0.0
+        uses: azure/aks-set-context@4e5aec273183a197b181314721843e047123d9dd # v3.0.0
         with:
           resource-group: ${{ env.AZURE_RESOURCE_GROUP }}
           cluster-name: ${{ env.AKS_CLUSTER_NAME }}
@@ -140,9 +139,9 @@ jobs:
           # (e.g. image: __ACR_NAME__.azurecr.io/backend:__IMAGE_TAG__) to avoid
           # accidental substitution in comments or unrelated config values.
           MANIFESTS=$(find infra/k8s/backend -name '*.yaml' -o -name '*.yml')
-          if ! echo "$MANIFESTS" | xargs grep -ql '__IMAGE_TAG__\|__ACR_NAME__'; then
-            echo "ERROR: No placeholders found in manifests" && exit 1
-          fi
+          echo "$MANIFESTS" | while IFS= read -r f; do
+            grep -q '__IMAGE_TAG__\|__ACR_NAME__' "$f" || { echo "ERROR: No placeholders in $f"; exit 1; }
+          done
           echo "$MANIFESTS" | xargs sed -i \
             -e "s|__IMAGE_TAG__|${IMAGE_TAG}|g" \
             -e "s|__ACR_NAME__|${ACR_NAME}|g"
@@ -151,6 +150,7 @@ jobs:
         run: kubectl apply -f infra/k8s/backend/ --dry-run=server
 
       - name: Apply Kubernetes manifests
+        id: apply
         run: kubectl apply -f infra/k8s/backend/ --server-side
 
       - name: Wait for rollout to complete
@@ -161,16 +161,16 @@ jobs:
             -n ${{ env.K8S_NAMESPACE }} --timeout=5m
 
       - name: Rollback on failure
-        if: failure()
+        if: failure() && steps.apply.conclusion == 'success'
         run: |
           kubectl rollout undo deployment/${{ vars.BACKEND_DEPLOYMENT_NAME || 'backend' }} \
             -n ${{ env.K8S_NAMESPACE }}
 
       - name: Smoke test backend
         run: |
-          BACKEND_URL=$(kubectl get svc backend -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          BACKEND_URL=$(kubectl get ingress backend -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
           if [ -z "$BACKEND_URL" ]; then
-            echo "ERROR: LoadBalancer IP not yet assigned" && exit 1
+            echo "ERROR: Ingress hostname not yet assigned" && exit 1
           fi
           curl --fail --retry 5 --retry-delay 5 --max-time 10 "https://${BACKEND_URL}/health"
 
@@ -183,8 +183,7 @@ jobs:
     if: |
       always() &&
       needs.changes.outputs.frontend == 'true' &&
-      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped') &&
-      needs.deploy-infra.result != 'cancelled'
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped')
     environment: production
 
     steps:
@@ -203,8 +202,10 @@ jobs:
         run: npm ci
 
       - name: Validate build environment
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
         run: |
-          if [ -z "${{ vars.VITE_API_BASE_URL }}" ]; then
+          if [ -z "$VITE_API_BASE_URL" ]; then
             echo "ERROR: VITE_API_BASE_URL is not set" && exit 1
           fi
 
