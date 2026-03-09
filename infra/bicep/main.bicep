@@ -81,22 +81,16 @@ module acr 'modules/acr.bicep' = {
 
 // ---------------------------------------------------------------------------
 // AcrPull role assignment – allows AKS kubelet identity to pull images
+// Deployed as a module (resource-group scope) to satisfy BCP139 and BCP120
 // ---------------------------------------------------------------------------
 
-var acrPullRoleDefinitionId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
-
-resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(acr.outputs.acrId, aks.outputs.kubeletIdentityObjectId, acrPullRoleDefinitionId)
-  scope: resourceGroup(resourceGroupName)
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleDefinitionId)
-    principalId: aks.outputs.kubeletIdentityObjectId
-    principalType: 'ServicePrincipal'
+module acrPullRoleAssignment 'modules/roleassignment.bicep' = {
+  name: 'roleassignment-deployment'
+  scope: rg
+  params: {
+    acrId: acr.outputs.acrId
+    kubeletPrincipalId: aks.outputs.kubeletIdentityObjectId
   }
-  dependsOn: [
-    acr
-    aks
-  ]
 }
 
 // ---------------------------------------------------------------------------
