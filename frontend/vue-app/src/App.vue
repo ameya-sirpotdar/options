@@ -59,10 +59,10 @@ const {
   vix,
   options,
   bestTrade,
-  polling,
-  calculating,
-  pollOptions,
-  calculateTrades,
+  isPolling: polling,
+  isCalculating: calculating,
+  fetchMarketData: pollOptions,
+  fetchBestTrade: calculateTrades,
 } = useMarketData()
 
 const loading = ref(false)

@@ -32,6 +32,11 @@ spec:
                 secretKeyRef:
                   name: options-backend-secrets
                   key: key-vault-url
+            - name: ALLOWED_ORIGINS
+              valueFrom:
+                secretKeyRef:
+                  name: options-backend-secrets
+                  key: allowed-origins
           livenessProbe:
             httpGet:
               path: /health
