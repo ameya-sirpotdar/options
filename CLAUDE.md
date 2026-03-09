@@ -78,6 +78,30 @@ score = (
 
 The `autodev-agents` issue trigger workflow (`.github/workflows/issue-trigger.yml`) is active. It fires on new issues, issue comments, PR reviews, and PR review comments, then POSTs to `WORKER_URL/trigger` with the issue number. Requires `WORKER_URL` and `TRIGGER_API_KEY` secrets to be set in GitHub.
 
+The `deploy.yml` workflow handles frontend deployment to Azure Static Web Apps. It includes a pre-flight validation step that fails fast with actionable error messages if any required GitHub secrets or variables are missing.
+
+### Required GitHub Configuration for Frontend Deployment
+
+Before the `deploy-frontend` job will succeed, the following must be configured in the GitHub repository:
+
+**Secrets** (Settings → Secrets and variables → Actions → Secrets):
+| Secret | Description |
+|---|---|
+| `AZURE_STATIC_WEB_APPS_API_TOKEN` | Deployment token from the Azure Static Web App resource |
+
+**Variables** (Settings → Secrets and variables → Actions → Variables):
+| Variable | Description |
+|---|---|
+| `SWA_APP_LOCATION` | Path to the frontend app source (e.g. `frontend/vue-app`) |
+| `SWA_OUTPUT_LOCATION` | Path to the built output directory (e.g. `dist`) |
+
+See [`docs/setup/github-secrets-setup.md`](docs/setup/github-secrets-setup.md) for full setup instructions.
+
+To validate your local environment and GitHub configuration before pushing, run:
+```bash
+bash scripts/validate-github-config.sh
+```
+
 ## Development Guidelines
 
 - Write unit tests for all new code
