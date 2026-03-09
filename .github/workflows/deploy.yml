@@ -44,6 +44,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.infra == 'true'
     environment: production
+    timeout-minutes: 60
     concurrency:
       group: deploy-infra-production
       cancel-in-progress: false
@@ -83,8 +84,13 @@ jobs:
       needs.changes.outputs.backend == 'true' &&
       (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped')
     environment: production
+    timeout-minutes: 30
+    concurrency:
+      group: deploy-backend-production
+      cancel-in-progress: false
     env:
       K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'production' }}
+      BACKEND_DEPLOYMENT_LABEL: ${{ vars.BACKEND_DEPLOYMENT_LABEL || 'app=backend' }}
 
     steps:
       - name: Validate required secrets
@@ -99,9 +105,15 @@ jobs:
         run: |
           set +x  # prevent accidental value echo via xtrace
           missing=0
-          for var in ACR_NAME AKS_CLUSTER_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_LOCATION; do
+          for secret in ACR_NAME AKS_CLUSTER_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+            if [ -z "${!secret}" ]; then
+              echo "ERROR: Required secret '$secret' is not set"
+              missing=1
+            fi
+          done
+          for var in AZURE_RESOURCE_GROUP AZURE_LOCATION; do
             if [ -z "${!var}" ]; then
-              echo "ERROR: Required secret/variable '$var' is not set"
+              echo "ERROR: Required variable '$var' is not set"
               missing=1
             fi
           done
@@ -138,6 +150,8 @@ jobs:
           push: true
           tags: |
             ${{ secrets.ACR_NAME }}.azurecr.io/backend:${{ github.sha }}
+            ${{ secrets.ACR_NAME }}.azurecr.io/backend:latest
+            ${{ secrets.ACR_NAME }}.azurecr.io/backend:production
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -169,23 +183,31 @@ jobs:
       - name: Validate Kubernetes manifests (dry-run)
         # Server-side dry-run is used intentionally to exercise admission webhooks.
         # --request-timeout guards against cluster unavailability blocking the pipeline.
-        run: kubectl apply -f infra/k8s/backend/ --dry-run=server --namespace=${{ env.K8S_NAMESPACE }} --request-timeout=30s
+        env:
+          NAMESPACE: ${{ env.K8S_NAMESPACE }}
+        run: kubectl apply -f infra/k8s/backend/ --dry-run=server --namespace="$NAMESPACE" --request-timeout=30s
 
       - name: Apply Kubernetes manifests
         id: apply
-        run: kubectl apply -f infra/k8s/backend/ --server-side --namespace=${{ env.K8S_NAMESPACE }}
+        env:
+          NAMESPACE: ${{ env.K8S_NAMESPACE }}
+        run: kubectl apply -f infra/k8s/backend/ --server-side --namespace="$NAMESPACE"
 
       - name: Wait for rollout to complete
         id: rollout_wait
+        env:
+          NAMESPACE: ${{ env.K8S_NAMESPACE }}
+          DEPLOY_LABEL: ${{ env.BACKEND_DEPLOYMENT_LABEL }}
+          ROLLOUT_TIMEOUT: ${{ vars.ROLLOUT_TIMEOUT || '5m' }}
         run: |
           set -euo pipefail
-          mapfile -t DEPLOYS < <(kubectl get deployments -n ${{ env.K8S_NAMESPACE }} -l app=backend -o name)
+          mapfile -t DEPLOYS < <(kubectl get deployments -n "$NAMESPACE" -l "$DEPLOY_LABEL" -o name)
           if [ ${#DEPLOYS[@]} -eq 0 ]; then
-            echo "ERROR: No backend deployments found in namespace ${{ env.K8S_NAMESPACE }}" && exit 1
+            echo "ERROR: No backend deployments found in namespace '$NAMESPACE' with label '$DEPLOY_LABEL'" && exit 1
           fi
           pids=()
           for deploy in "${DEPLOYS[@]}"; do
-            kubectl rollout status "$deploy" -n ${{ env.K8S_NAMESPACE }} --timeout=${{ vars.ROLLOUT_TIMEOUT || '5m' }} &
+            kubectl rollout status "$deploy" -n "$NAMESPACE" --timeout="$ROLLOUT_TIMEOUT" &
             pids+=("$!")
           done
           failed=0
@@ -196,11 +218,14 @@ jobs:
 
       - name: Rollback on failure
         if: failure() && steps.apply.conclusion == 'success' && steps.rollout_wait.conclusion == 'failure'
+        env:
+          NAMESPACE: ${{ env.K8S_NAMESPACE }}
+          DEPLOY_LABEL: ${{ env.BACKEND_DEPLOYMENT_LABEL }}
         run: |
           set -euo pipefail
-          mapfile -t DEPLOYS < <(kubectl get deployments -n ${{ env.K8S_NAMESPACE }} -l app=backend -o name)
+          mapfile -t DEPLOYS < <(kubectl get deployments -n "$NAMESPACE" -l "$DEPLOY_LABEL" -o name)
           for deploy in "${DEPLOYS[@]}"; do
-            kubectl rollout undo "$deploy" -n ${{ env.K8S_NAMESPACE }}
+            kubectl rollout undo "$deploy" -n "$NAMESPACE"
           done
 
       - name: Smoke test backend
