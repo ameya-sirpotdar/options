@@ -11,6 +11,28 @@ from backend import config
 logger = logging.getLogger(__name__)
 
 
+class SchwabAuth:
+    """Wraps Schwab OAuth credential resolution and token fetching."""
+
+    default_secret_path = None  # reserved for future use
+
+    def __init__(
+        self,
+        vault_url: Optional[str] = None,
+        vault_token: Optional[str] = None,
+        secret_path: Optional[str] = None,
+        vault_mount: Optional[str] = None,
+    ) -> None:
+        self.vault_url = vault_url
+        self.vault_token = vault_token
+        self.secret_path = secret_path
+        self.vault_mount = vault_mount
+
+    def get_access_token(self) -> str:
+        """Fetch an OAuth2 client_credentials token from Schwab."""
+        return get_access_token(vault_url=self.vault_url)
+
+
 def _get_secret(vault_url: str, secret_name: str) -> str:
     credential = DefaultAzureCredential()
     client = SecretClient(vault_url=vault_url, credential=credential)
