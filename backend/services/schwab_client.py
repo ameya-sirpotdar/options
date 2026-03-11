@@ -7,7 +7,7 @@ from backend.services.schwab_market_data import fetch_options_chain
 class SchwabClient:
     """Thin wrapper that combines auth + options chain fetch into a single callable."""
 
-    def __init__(self, vault_url: str):
+    def __init__(self, vault_url: str | None = None):
         self._vault_url = vault_url
         self._token: str = ""
 
