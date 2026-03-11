@@ -4,7 +4,7 @@ import { pollOptions, calculateTrades } from '../api/endpoints.js'
 export function useMarketData() {
   const delta = ref(0.30)
   const expiry = ref('')
-  const tickers = ref([])
+  const tickers = ref('')
   const vix = ref(null)
   const options = ref([])
   const bestTrade = ref(null)
@@ -30,8 +30,13 @@ export function useMarketData() {
     bestTrade.value = null
 
     try {
+      // Parse comma-separated string into array before sending to API
+      const tickerArray = tickers.value
+        .split(',')
+        .map(t => t.trim())
+        .filter(Boolean)
       const response = await pollOptions({
-        tickers: tickers.value,
+        tickers: tickerArray,
         delta: delta.value,
         expiry: expiry.value,
       })
@@ -78,7 +83,7 @@ export function useMarketData() {
   function resetAll() {
     delta.value = 0.30
     expiry.value = ''
-    tickers.value = []
+    tickers.value = ''
     vix.value = null
     options.value = []
     bestTrade.value = null
