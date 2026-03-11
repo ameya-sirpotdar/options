@@ -24,6 +24,8 @@ async def get_options_chain(
     response.headers["Cache-Control"] = "no-store"
     try:
         schwab_client = getattr(http_request.app.state, "schwab_client", None)
+        if schwab_client is None:
+            raise HTTPException(status_code=503, detail="Schwab client not available")
         polling_service = PollingService(schwab_client=schwab_client)
         results = polling_service.poll_options(request.tickers)
         return PollOptionsResponse(tickers=request.tickers, results=results)
