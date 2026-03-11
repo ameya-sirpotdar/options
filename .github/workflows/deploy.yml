@@ -209,10 +209,7 @@ jobs:
           TMPFILE=$(mktemp)
           trap 'rm -f "$TMPFILE"' EXIT
           chmod 600 "$TMPFILE"
-          printf 'azure-storage-connection-string=%s
-key-vault-url=%s
-allowed-origins=%s
-' \
+          printf 'azure-storage-connection-string=%s\nkey-vault-url=%s\nallowed-origins=%s\n' \
             "${AZURE_STORAGE_CONNECTION_STRING}" "${KEY_VAULT_URL}" "${ALLOWED_ORIGINS}" > "$TMPFILE"
           kubectl create secret generic options-backend-secrets \
             --namespace="${NAMESPACE}" \
@@ -382,3 +379,4 @@ allowed-origins=%s
           app_location: frontend/vue-app/dist
           output_location: ""
           skip_app_build: true
+
