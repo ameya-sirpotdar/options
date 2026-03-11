@@ -108,12 +108,15 @@ jobs:
         run: |
           set +x  # prevent accidental value echo via xtrace
           missing=0
-          for secret in ACR_NAME AKS_CLUSTER_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_STORAGE_CONNECTION_STRING KEY_VAULT_URL ALLOWED_ORIGINS; do
+          for secret in ACR_NAME AKS_CLUSTER_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_STORAGE_CONNECTION_STRING KEY_VAULT_URL; do
             if [ -z "${!secret}" ]; then
               echo "ERROR: Required secret '$secret' is not set"
               missing=1
             fi
           done
+          if [ -z "${ALLOWED_ORIGINS}" ]; then
+            echo "WARN: ALLOWED_ORIGINS is not set; defaulting to empty (all origins blocked)"
+          fi
           for var in AZURE_RESOURCE_GROUP AZURE_LOCATION; do
             if [ -z "${!var}" ]; then
               echo "ERROR: Required variable '$var' is not set"
@@ -156,8 +159,8 @@ jobs:
             ${{ secrets.ACR_NAME }}.azurecr.io/backend:latest
             ${{ secrets.ACR_NAME }}.azurecr.io/backend:production
           cache-from: |
-            type=registry,ref=${{ secrets.ACR_NAME }}.azurecr.io/backend:latest
             type=gha
+            type=registry,ref=${{ secrets.ACR_NAME }}.azurecr.io/backend:latest
           cache-to: type=gha,mode=max
 
       - name: Set AKS context
@@ -206,18 +209,12 @@ jobs:
           TMPFILE=$(mktemp)
           trap 'rm -f "$TMPFILE"' EXIT
           chmod 600 "$TMPFILE"
-          cat > "$TMPFILE" <<EOF
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: options-backend-secrets
-            namespace: ${NAMESPACE}
-          stringData:
-            azure-storage-connection-string: "${AZURE_STORAGE_CONNECTION_STRING}"
-            key-vault-url: "${KEY_VAULT_URL}"
-            allowed-origins: "${ALLOWED_ORIGINS}"
-          EOF
-          kubectl apply -f "$TMPFILE"
+          printf 'azure-storage-connection-string=%s\nkey-vault-url=%s\nallowed-origins=%s\n' \
+            "${AZURE_STORAGE_CONNECTION_STRING}" "${KEY_VAULT_URL}" "${ALLOWED_ORIGINS}" > "$TMPFILE"
+          kubectl create secret generic options-backend-secrets \
+            --namespace="${NAMESPACE}" \
+            --from-env-file="$TMPFILE" \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Validate Kubernetes manifests (dry-run)
         # Server-side dry-run is used intentionally to exercise admission webhooks.
@@ -286,11 +283,6 @@ jobs:
             echo "Waiting for ingress hostname... attempt $i/12"
             sleep 10
           done
-          # Fall back to spec.rules[0].host for clusters with a pre-known static hostname.
-          if [ -z "$BACKEND_URL" ]; then
-            BACKEND_URL=$(kubectl get ingress "${INGRESS_NAME}" -n "${{ env.K8S_NAMESPACE }}" \
-              -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)
-          fi
           if [ -z "$BACKEND_URL" ]; then
             echo "ERROR: Ingress hostname not assigned after 2 minutes" && exit 1
           fi
