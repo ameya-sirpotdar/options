@@ -209,7 +209,10 @@ jobs:
           TMPFILE=$(mktemp)
           trap 'rm -f "$TMPFILE"' EXIT
           chmod 600 "$TMPFILE"
-          printf 'azure-storage-connection-string=%s\nkey-vault-url=%s\nallowed-origins=%s\n' \
+          printf 'azure-storage-connection-string=%s
+key-vault-url=%s
+allowed-origins=%s
+' \
             "${AZURE_STORAGE_CONNECTION_STRING}" "${KEY_VAULT_URL}" "${ALLOWED_ORIGINS}" > "$TMPFILE"
           kubectl create secret generic options-backend-secrets \
             --namespace="${NAMESPACE}" \
@@ -303,18 +306,10 @@ jobs:
   deploy-frontend:
     name: Deploy Frontend
     runs-on: ubuntu-latest
-    # deploy-backend and deploy-frontend both depend only on deploy-infra (not each other),
-    # so they run in parallel once infra completes. This is intentional.
-    needs: [changes, deploy-infra]
-    # always() prevents GitHub from auto-skipping this job when deploy-infra is skipped
-    # (e.g. no infra changes). The explicit result checks then gate on actual outcomes.
-    # 'cancelled' is excluded explicitly so a cancelled infra run causes a hard failure
-    # rather than a silent skip.
-    if: |
-      always() &&
-      needs.changes.outputs.frontend == 'true' &&
-      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped') &&
-      needs.deploy-infra.result != 'cancelled'
+    # Frontend (SWA) is independent of AKS infra — decoupled so an infra failure
+    # does not block a frontend-only deploy.
+    needs: [changes]
+    if: needs.changes.outputs.frontend == 'true'
     environment: production
 
     steps:
@@ -387,4 +382,3 @@ jobs:
           app_location: frontend/vue-app/dist
           output_location: ""
           skip_app_build: true
-
