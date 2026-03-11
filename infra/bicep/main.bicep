@@ -84,13 +84,22 @@ module acr 'modules/acr.bicep' = {
 // Deployed as a module (resource-group scope) to satisfy BCP139 and BCP120
 // ---------------------------------------------------------------------------
 
+// AcrPull built-in role definition ID
+// Reference: https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles#acrpull
+var acrPullRoleDefinitionId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+
 module acrPullRoleAssignment 'modules/roleassignment.bicep' = {
-  name: 'roleassignment-deployment'
+  name: 'acrPullRoleAssignment'
   scope: rg
   params: {
-    acrId: acr.outputs.acrId
-    kubeletPrincipalId: aks.outputs.kubeletIdentityObjectId
+    acrName: acr.outputs.acrName
+    aksPrincipalId: aks.outputs.kubeletPrincipalId
+    roleDefinitionId: acrPullRoleDefinitionId
   }
+  dependsOn: [
+    acr
+    aks
+  ]
 }
 
 // ---------------------------------------------------------------------------
