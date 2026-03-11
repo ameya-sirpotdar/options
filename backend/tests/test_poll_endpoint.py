@@ -69,46 +69,6 @@ SAMPLE_CHAIN_RESPONSE = {
 }
 
 
-SAMPLE_FLAT_ROWS = [
-    {
-        "ticker": "AAPL",
-        "putCall": "CALL",
-        "strikePrice": 175.0,
-        "expirationDate": "2024-01-19",
-        "bid": 2.50,
-        "ask": 2.55,
-        "last": 2.52,
-        "volume": 1200,
-        "openInterest": 5000,
-        "delta": 0.52,
-        "gamma": 0.03,
-        "theta": -0.05,
-        "vega": 0.10,
-        "impliedVolatility": 0.25,
-        "inTheMoney": True,
-        "description": "AAPL Jan 19 2024 175 Call",
-    },
-    {
-        "ticker": "AAPL",
-        "putCall": "PUT",
-        "strikePrice": 175.0,
-        "expirationDate": "2024-01-19",
-        "bid": 1.80,
-        "ask": 1.85,
-        "last": 1.82,
-        "volume": 800,
-        "openInterest": 3000,
-        "delta": -0.48,
-        "gamma": 0.03,
-        "theta": -0.04,
-        "vega": 0.09,
-        "impliedVolatility": 0.24,
-        "inTheMoney": False,
-        "description": "AAPL Jan 19 2024 175 Put",
-    },
-]
-
-
 class TestPollOptionsEndpoint:
     def test_post_poll_options_returns_flat_rows(self):
         mock_client = MagicMock()
@@ -364,6 +324,7 @@ class TestPollOptionsEndpoint:
                 assert field in row, f"Missing field '{field}' in row: {row}"
 
     def test_post_poll_options_partial_schwab_failure(self):
+        """A single ticker failure should propagate as HTTP 500 — partial data is not acceptable."""
         async def side_effect(ticker, **kwargs):
             if ticker == "AAPL":
                 return SAMPLE_CHAIN_RESPONSE
