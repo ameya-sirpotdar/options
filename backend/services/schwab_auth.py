@@ -28,6 +28,11 @@ class SchwabAuth:
         self.secret_path = secret_path
         self.vault_mount = vault_mount
 
+    def get_credentials(self) -> dict:
+        """Resolve and return Schwab client credentials as a dict."""
+        client_id, client_secret = _resolve_client_credentials(self.vault_url)
+        return {"client_id": client_id, "client_secret": client_secret}
+
     def get_access_token(self) -> str:
         """Fetch an OAuth2 client_credentials token from Schwab."""
         return get_access_token(vault_url=self.vault_url)
