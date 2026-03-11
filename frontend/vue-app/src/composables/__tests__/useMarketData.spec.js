@@ -12,8 +12,8 @@ function createTestComponent(tickers) {
   return defineComponent({
     setup() {
       const tickersRef = typeof tickers === 'object' && 'value' in tickers ? tickers : ref(tickers)
-      const { rows, loading, error, poll } = useMarketData(tickersRef)
-      return { rows, loading, error, poll }
+      const { rows, isPolling, isCalculating, error, poll } = useMarketData(tickersRef)
+      return { rows, isPolling, isCalculating, error, poll }
     },
     template: '<div></div>',
   })
@@ -28,14 +28,15 @@ describe('useMarketData', () => {
     vi.restoreAllMocks()
   })
 
-  it('initializes with empty rows, loading false, and no error', () => {
+  it('initializes with empty rows, isPolling false, isCalculating false, and no error', () => {
     const wrapper = mount(createTestComponent(['AAPL']))
     expect(wrapper.vm.rows).toEqual([])
-    expect(wrapper.vm.loading).toBe(false)
+    expect(wrapper.vm.isPolling).toBe(false)
+    expect(wrapper.vm.isCalculating).toBe(false)
     expect(wrapper.vm.error).toBeNull()
   })
 
-  it('sets loading to true while polling and false after', async () => {
+  it('sets isPolling to true while polling and false after', async () => {
     let resolvePromise
     pollMarketData.mockReturnValue(
       new Promise((resolve) => {
@@ -47,19 +48,19 @@ describe('useMarketData', () => {
     const pollPromise = wrapper.vm.poll()
 
     await flushPromises()
-    // loading should be true before resolution... but since we check after flushPromises,
+    // isPolling should be true before resolution... but since we check after flushPromises,
     // let's check before resolving
-    // Re-test: check loading is true synchronously after calling poll
+    // Re-test: check isPolling is true synchronously after calling poll
     const wrapper2 = mount(createTestComponent(['TSLA']))
-    let loadingDuringPoll = false
+    let isPollingDuringPoll = false
     pollMarketData.mockImplementation(async () => {
-      loadingDuringPoll = wrapper2.vm.loading
+      isPollingDuringPoll = wrapper2.vm.isPolling
       return []
     })
     await wrapper2.vm.poll()
     await flushPromises()
-    expect(loadingDuringPoll).toBe(true)
-    expect(wrapper2.vm.loading).toBe(false)
+    expect(isPollingDuringPoll).toBe(true)
+    expect(wrapper2.vm.isPolling).toBe(false)
 
     resolvePromise([])
     await pollPromise
@@ -104,7 +105,7 @@ describe('useMarketData', () => {
 
     expect(wrapper.vm.rows).toEqual([])
     expect(wrapper.vm.error).toBe(errorMessage)
-    expect(wrapper.vm.loading).toBe(false)
+    expect(wrapper.vm.isPolling).toBe(false)
   })
 
   it('clears previous error on successful poll', async () => {
@@ -197,7 +198,7 @@ describe('useMarketData', () => {
     await flushPromises()
 
     // Either one or two calls is acceptable depending on implementation
-    // but loading should be false after all settle
-    expect(wrapper.vm.loading).toBe(false)
+    // but isPolling should be false after all settle
+    expect(wrapper.vm.isPolling).toBe(false)
   })
 })

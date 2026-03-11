@@ -11,7 +11,8 @@ describe('InputPanel', () => {
         delta: 0.30,
         expiry: '2024-12-20',
         vix: null,
-        loading: false,
+        isPolling: false,
+        isCalculating: false,
       },
     })
   })
@@ -94,24 +95,37 @@ describe('InputPanel', () => {
     expect(wrapper.emitted('calculate')).toBeTruthy()
   })
 
-  it('disables both buttons when loading is true', async () => {
-    await wrapper.setProps({ loading: true })
+  it('disables both buttons when isPolling is true', async () => {
+    await wrapper.setProps({ isPolling: true })
     const buttons = wrapper.findAll('button')
     buttons.forEach(button => {
       expect(button.attributes('disabled')).toBeDefined()
     })
   })
 
-  it('enables both buttons when loading is false', () => {
+  it('disables both buttons when isCalculating is true', async () => {
+    await wrapper.setProps({ isCalculating: true })
+    const buttons = wrapper.findAll('button')
+    buttons.forEach(button => {
+      expect(button.attributes('disabled')).toBeDefined()
+    })
+  })
+
+  it('enables both buttons when isPolling and isCalculating are false', () => {
     const buttons = wrapper.findAll('button')
     buttons.forEach(button => {
       expect(button.attributes('disabled')).toBeUndefined()
     })
   })
 
-  it('shows loading indicator when loading is true', async () => {
-    await wrapper.setProps({ loading: true })
-    expect(wrapper.text()).toMatch(/loading|Loading|spinner/i)
+  it('shows loading indicator when isPolling is true', async () => {
+    await wrapper.setProps({ isPolling: true })
+    expect(wrapper.text()).toMatch(/loading|Loading|spinner|polling|Polling/i)
+  })
+
+  it('shows loading indicator when isCalculating is true', async () => {
+    await wrapper.setProps({ isCalculating: true })
+    expect(wrapper.text()).toMatch(/loading|Loading|spinner|calculating|Calculating/i)
   })
 
   it('displays current delta value as formatted text', () => {
