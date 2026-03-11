@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import ValidationError
 from typing import List
 from backend.models.poll import OptionsChainRequest, PollOptionsResponse
 from backend.services.polling_service import PollingService
@@ -9,12 +10,15 @@ polling_service = PollingService()
 
 class OptionsChainRequestDep:
     def __init__(self, tickers: List[str] = Query(..., description="Ticker symbols")):
-        request = OptionsChainRequest(tickers=tickers)
-        self.tickers = request.tickers
+        try:
+            validated = OptionsChainRequest(tickers=tickers)
+        except ValidationError as e:
+            raise HTTPException(status_code=422, detail=e.errors())
+        self.tickers = validated.tickers
 
 
 @router.get("/options-chain", response_model=PollOptionsResponse)
-async def get_options_chain(request: OptionsChainRequestDep = Depends(), response: Response):
+async def get_options_chain(response: Response, request: OptionsChainRequestDep = Depends()):
     response.headers["Cache-Control"] = "no-store"
     try:
         results = polling_service.poll_options(request.tickers)
