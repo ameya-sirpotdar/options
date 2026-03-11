@@ -58,3 +58,13 @@ No code changes are required — this is purely a dependency lock file regenerat
 - **`fsevents` platform dependency**: `fsevents` is macOS-only. If regenerating on Linux/Windows, it may appear as an optional dependency with `"optional": true` — this is expected and correct.
 - **Lock file format version**: Ensure `lockfileVersion` in the regenerated file matches what the CI Node version expects (v2 or v3). `npm install` will use the version appropriate for the installed npm.
 - **No unintended upgrades**: After running `npm install`, review the diff to confirm only Playwright-related entries were added and no other packages were inadvertently upgraded.
+
+## ⚠️ Warning: Never Manually Edit `package-lock.json`
+
+**Do not manually craft or edit entries in `package-lock.json`.** In particular:
+
+- **Integrity hashes must never be written by hand.** Every `integrity` field must be a real SHA-512 hash sourced directly from the npm registry. Placeholder values (e.g. `sha512-placeholder-integrity-...==`) are not valid hashes — `npm ci` will either reject them outright or install unverified packages, both of which are unacceptable outcomes.
+- **Manual edits undermine supply-chain security.** The entire purpose of the lock file is to pin verified, registry-sourced package content. Fake hashes defeat this guarantee entirely.
+- **`npm ci` will fail with placeholder hashes.** CI pipelines that run `npm ci` perform strict integrity verification. Any non-authentic hash will cause the build to break.
+
+The only correct way to update `package-lock.json` is to run `npm install` on a machine with real internet access to the npm registry, then commit the file that npm generates. Never copy, invent, or approximate integrity hash values.
