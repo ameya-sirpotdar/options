@@ -19,6 +19,6 @@ class SchwabClient:
             else:
                 self._token = get_access_token(vault_url=self._vault_url)
 
-    def get_options_chain(self, ticker: str) -> Dict[str, Any]:
+    def get_option_chain(self, ticker: str) -> Dict[str, Any]:
         self._ensure_token()
         return fetch_options_chain(ticker, self._token)
