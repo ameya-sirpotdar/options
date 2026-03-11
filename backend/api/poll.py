@@ -29,5 +29,7 @@ async def get_options_chain(
         polling_service = PollingService(schwab_client=schwab_client)
         results = polling_service.poll_options(request.tickers)
         return PollOptionsResponse(tickers=request.tickers, results=results)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
