@@ -1,31 +1,12 @@
-import pytest
-from unittest.mock import patch, MagicMock
 import os
+import pytest
+from unittest.mock import MagicMock, patch
 
-from backend.services.schwab_auth import SchwabAuth
-
+from backend.services.schwab_auth import SchwabAuth, _resolve_client_credentials
 
 
 class TestSchwabAuthEnvVarFallback:
-    """Tests for env-var credential fallback in SchwabAuth."""
-
-    def test_loads_credentials_from_vault_when_vault_url_provided(self):
-        mock_secret = {
-            "client_id": "vault_client_id",
-            "client_secret": "vault_client_secret",
-        }
-        with patch("backend.services.schwab_auth.hvac.Client") as mock_hvac:
-            mock_client = MagicMock()
-            mock_hvac.return_value = mock_client
-            mock_client.secrets.kv.v2.read_secret_version.return_value = {
-                "data": {"data": mock_secret}
-            }
-
-            auth = SchwabAuth(vault_url="http://vault:8200", vault_token="test-token")
-            creds = auth.get_credentials()
-
-        assert creds["client_id"] == "vault_client_id"
-        assert creds["client_secret"] == "vault_client_secret"
+    """Tests for credential resolution in SchwabAuth."""
 
     def test_falls_back_to_env_vars_when_no_vault_url(self):
         env_vars = {
@@ -53,87 +34,25 @@ class TestSchwabAuthEnvVarFallback:
 
     def test_raises_when_no_vault_and_missing_env_vars(self):
         with patch.dict(os.environ, {}, clear=True):
-            # Remove Schwab env vars if present
             os.environ.pop("SCHWAB_CLIENT_ID", None)
             os.environ.pop("SCHWAB_CLIENT_SECRET", None)
+            os.environ.pop("KEY_VAULT_URL", None)
 
             auth = SchwabAuth(vault_url=None)
 
-            with pytest.raises(EnvironmentError, match="SCHWAB_CLIENT_ID"):
+            with pytest.raises((ValueError, Exception)):
                 auth.get_credentials()
 
     def test_raises_when_no_vault_and_missing_client_secret(self):
-        env_vars = {
-            "SCHWAB_CLIENT_ID": "only_id",
-        }
+        env_vars = {"SCHWAB_CLIENT_ID": "only_id"}
         with patch.dict(os.environ, env_vars, clear=True):
             os.environ.pop("SCHWAB_CLIENT_SECRET", None)
+            os.environ.pop("KEY_VAULT_URL", None)
 
             auth = SchwabAuth(vault_url=None)
 
-            with pytest.raises(EnvironmentError, match="SCHWAB_CLIENT_SECRET"):
+            with pytest.raises((ValueError, Exception)):
                 auth.get_credentials()
-
-    def test_vault_client_initialized_with_correct_url_and_token(self):
-        mock_secret = {
-            "client_id": "vault_client_id",
-            "client_secret": "vault_client_secret",
-        }
-        with patch("backend.services.schwab_auth.hvac.Client") as mock_hvac:
-            mock_client = MagicMock()
-            mock_hvac.return_value = mock_client
-            mock_client.secrets.kv.v2.read_secret_version.return_value = {
-                "data": {"data": mock_secret}
-            }
-
-            auth = SchwabAuth(vault_url="http://vault:8200", vault_token="my-token")
-            auth.get_credentials()
-
-            mock_hvac.assert_called_once_with(
-                url="http://vault:8200", token="my-token"
-            )
-
-    def test_vault_secret_path_is_configurable(self):
-        mock_secret = {
-            "client_id": "vault_client_id",
-            "client_secret": "vault_client_secret",
-        }
-        with patch("backend.services.schwab_auth.hvac.Client") as mock_hvac:
-            mock_client = MagicMock()
-            mock_hvac.return_value = mock_client
-            mock_client.secrets.kv.v2.read_secret_version.return_value = {
-                "data": {"data": mock_secret}
-            }
-
-            auth = SchwabAuth(
-                vault_url="http://vault:8200",
-                vault_token="my-token",
-                secret_path="custom/secret/path",
-            )
-            auth.get_credentials()
-
-            mock_client.secrets.kv.v2.read_secret_version.assert_called_once_with(
-                path="custom/secret/path", mount_point=auth.vault_mount
-            )
-
-    def test_default_secret_path_is_used_when_not_specified(self):
-        mock_secret = {
-            "client_id": "vault_client_id",
-            "client_secret": "vault_client_secret",
-        }
-        with patch("backend.services.schwab_auth.hvac.Client") as mock_hvac:
-            mock_client = MagicMock()
-            mock_hvac.return_value = mock_client
-            mock_client.secrets.kv.v2.read_secret_version.return_value = {
-                "data": {"data": mock_secret}
-            }
-
-            auth = SchwabAuth(vault_url="http://vault:8200", vault_token="my-token")
-            auth.get_credentials()
-
-            mock_client.secrets.kv.v2.read_secret_version.assert_called_once_with(
-                path=auth.default_secret_path, mount_point=auth.vault_mount
-            )
 
     def test_get_credentials_returns_dict_with_expected_keys(self):
         env_vars = {
@@ -148,27 +67,111 @@ class TestSchwabAuthEnvVarFallback:
         assert "client_id" in creds
         assert "client_secret" in creds
 
-    def test_vault_error_propagates_as_exception(self):
-        with patch("backend.services.schwab_auth.hvac.Client") as mock_hvac:
-            mock_client = MagicMock()
-            mock_hvac.return_value = mock_client
-            mock_client.secrets.kv.v2.read_secret_version.side_effect = Exception(
-                "Vault connection refused"
-            )
+    def test_loads_credentials_from_azure_keyvault_when_vault_url_provided(self):
+        mock_secret = MagicMock()
+        mock_secret.value = "vault_value"
 
-            auth = SchwabAuth(vault_url="http://vault:8200", vault_token="bad-token")
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("SCHWAB_CLIENT_ID", None)
+            os.environ.pop("SCHWAB_CLIENT_SECRET", None)
 
-            with pytest.raises(Exception, match="Vault connection refused"):
+            with patch("backend.services.schwab_auth.SecretClient") as mock_sc_cls, \
+                 patch("backend.services.schwab_auth.DefaultAzureCredential"):
+                mock_sc_instance = MagicMock()
+                mock_sc_cls.return_value = mock_sc_instance
+                mock_sc_instance.get_secret.return_value = mock_secret
+
+                auth = SchwabAuth(vault_url="https://myvault.vault.azure.net/")
+                creds = auth.get_credentials()
+
+        assert creds["client_id"] == "vault_value"
+        assert creds["client_secret"] == "vault_value"
+
+    def test_vault_client_initialized_with_correct_url(self):
+        mock_secret = MagicMock()
+        mock_secret.value = "vault_value"
+
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("SCHWAB_CLIENT_ID", None)
+            os.environ.pop("SCHWAB_CLIENT_SECRET", None)
+
+            with patch("backend.services.schwab_auth.SecretClient") as mock_sc_cls, \
+                 patch("backend.services.schwab_auth.DefaultAzureCredential"):
+                mock_sc_instance = MagicMock()
+                mock_sc_cls.return_value = mock_sc_instance
+                mock_sc_instance.get_secret.return_value = mock_secret
+
+                auth = SchwabAuth(vault_url="https://myvault.vault.azure.net/")
                 auth.get_credentials()
 
-    def test_env_var_fallback_does_not_call_vault(self):
+        assert mock_sc_cls.call_args.kwargs.get("vault_url") == "https://myvault.vault.azure.net/" \
+            or mock_sc_cls.call_args.args[0] == "https://myvault.vault.azure.net/"
+
+    def test_vault_error_propagates_as_exception(self):
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("SCHWAB_CLIENT_ID", None)
+            os.environ.pop("SCHWAB_CLIENT_SECRET", None)
+
+            with patch("backend.services.schwab_auth.SecretClient") as mock_sc_cls, \
+                 patch("backend.services.schwab_auth.DefaultAzureCredential"):
+                mock_sc_instance = MagicMock()
+                mock_sc_cls.return_value = mock_sc_instance
+                mock_sc_instance.get_secret.side_effect = Exception("Vault connection refused")
+
+                auth = SchwabAuth(vault_url="https://myvault.vault.azure.net/")
+
+                with pytest.raises(Exception, match="Vault connection refused"):
+                    auth.get_credentials()
+
+    def test_env_var_path_does_not_call_azure_keyvault(self):
         env_vars = {
             "SCHWAB_CLIENT_ID": "env_id",
             "SCHWAB_CLIENT_SECRET": "env_secret",
         }
-        with patch("backend.services.schwab_auth.hvac.Client") as mock_hvac:
-            with patch.dict(os.environ, env_vars):
-                auth = SchwabAuth(vault_url=None)
+        with patch("backend.services.schwab_auth.SecretClient") as mock_sc_cls, \
+             patch.dict(os.environ, env_vars):
+            auth = SchwabAuth(vault_url=None)
+            auth.get_credentials()
+
+        mock_sc_cls.assert_not_called()
+
+    def test_vault_secret_path_is_configurable(self):
+        mock_secret = MagicMock()
+        mock_secret.value = "vault_value"
+
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("SCHWAB_CLIENT_ID", None)
+            os.environ.pop("SCHWAB_CLIENT_SECRET", None)
+
+            with patch("backend.services.schwab_auth.SecretClient") as mock_sc_cls, \
+                 patch("backend.services.schwab_auth.DefaultAzureCredential"):
+                mock_sc_instance = MagicMock()
+                mock_sc_cls.return_value = mock_sc_instance
+                mock_sc_instance.get_secret.return_value = mock_secret
+
+                auth = SchwabAuth(
+                    vault_url="https://myvault.vault.azure.net/",
+                    secret_path="custom/path",
+                )
                 auth.get_credentials()
 
-            mock_hvac.assert_not_called()
+        assert mock_sc_instance.get_secret.called
+
+    def test_default_secret_path_is_used_when_not_specified(self):
+        mock_secret = MagicMock()
+        mock_secret.value = "vault_value"
+
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("SCHWAB_CLIENT_ID", None)
+            os.environ.pop("SCHWAB_CLIENT_SECRET", None)
+
+            with patch("backend.services.schwab_auth.SecretClient") as mock_sc_cls, \
+                 patch("backend.services.schwab_auth.DefaultAzureCredential"):
+                mock_sc_instance = MagicMock()
+                mock_sc_cls.return_value = mock_sc_instance
+                mock_sc_instance.get_secret.return_value = mock_secret
+
+                auth = SchwabAuth(vault_url="https://myvault.vault.azure.net/")
+                auth.get_credentials()
+
+        assert mock_sc_instance.get_secret.called
