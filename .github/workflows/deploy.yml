@@ -61,7 +61,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy Bicep template
-        uses: azure/arm-deploy@a1361c2c2cd398621955b16ca32e01c65ea340f5 # v2
+        uses: azure/arm-deploy@e792c9a34eb6a018b445eff5f1a6394f0c6e1e2d # v2.0.0
         with:
           scope: subscription
           region: ${{ env.AZURE_LOCATION }}
@@ -154,9 +154,9 @@ jobs:
             ${{ secrets.ACR_NAME }}.azurecr.io/backend:${{ github.sha }}
             ${{ secrets.ACR_NAME }}.azurecr.io/backend:latest
             ${{ secrets.ACR_NAME }}.azurecr.io/backend:production
-          cache-from: type=registry,ref=${{ secrets.ACR_NAME }}.azurecr.io/backend:latest
-          cache-to: type=inline
-          cache-from: type=gha
+          cache-from: |
+            type=registry,ref=${{ secrets.ACR_NAME }}.azurecr.io/backend:latest
+            type=gha
           cache-to: type=gha,mode=max
 
       - name: Set AKS context
@@ -210,7 +210,9 @@ jobs:
         id: apply
         env:
           NAMESPACE: ${{ env.K8S_NAMESPACE }}
-        run: kubectl apply -f infra/k8s/ --server-side --force-conflicts --namespace="$NAMESPACE"
+        run: kubectl apply -f infra/k8s/ --server-side --namespace="$NAMESPACE"
+        # --force-conflicts intentionally omitted; add back only if a specific
+        # field-manager conflict is identified and understood.
 
       - name: Wait for rollout to complete
         id: rollout_wait
