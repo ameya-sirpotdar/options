@@ -61,7 +61,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy Bicep template
-        uses: azure/arm-deploy@a1361c2c2cd398621955b16ca32e01c65ea340f5 # v2
+        uses: azure/arm-deploy@e792c9a34eb6a018b445eff5f1a6394f0c6e1e2d # v2.0.0
         with:
           scope: subscription
           region: ${{ env.AZURE_LOCATION }}
@@ -102,6 +102,7 @@ jobs:
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
           KEY_VAULT_URL: ${{ secrets.KEY_VAULT_URL }}
+          ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
           AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
         run: |
@@ -113,6 +114,9 @@ jobs:
               missing=1
             fi
           done
+          if [ -z "${ALLOWED_ORIGINS}" ]; then
+            echo "WARN: ALLOWED_ORIGINS is not set; defaulting to empty (all origins blocked)"
+          fi
           for var in AZURE_RESOURCE_GROUP AZURE_LOCATION; do
             if [ -z "${!var}" ]; then
               echo "ERROR: Required variable '$var' is not set"
@@ -154,9 +158,9 @@ jobs:
             ${{ secrets.ACR_NAME }}.azurecr.io/backend:${{ github.sha }}
             ${{ secrets.ACR_NAME }}.azurecr.io/backend:latest
             ${{ secrets.ACR_NAME }}.azurecr.io/backend:production
-          cache-from: type=registry,ref=${{ secrets.ACR_NAME }}.azurecr.io/backend:latest
-          cache-to: type=inline
-          cache-from: type=gha
+          cache-from: |
+            type=gha
+            type=registry,ref=${{ secrets.ACR_NAME }}.azurecr.io/backend:latest
           cache-to: type=gha,mode=max
 
       - name: Set AKS context
@@ -170,19 +174,26 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
           ACR_NAME: ${{ secrets.ACR_NAME }}
         run: |
-          # Only process manifests that contain __IMAGE_TAG__ (i.e. deployment.yaml).
-          # Other manifests (ingress, service, secrets) do not require image substitution.
+          # Process all YAML manifests under infra/k8s/ and substitute any placeholders
+          # they contain. A manifest may have __ACR_NAME__ without __IMAGE_TAG__ (e.g. a
+          # ConfigMap referencing the registry), so we iterate all files rather than
+          # filtering on __IMAGE_TAG__ alone to avoid silently leaving placeholders unreplaced.
           set -euo pipefail
-          mapfile -t MANIFESTS < <(grep -rl '__IMAGE_TAG__' infra/k8s/)
-          if [ ${#MANIFESTS[@]} -eq 0 ]; then
-            echo "ERROR: No manifests with __IMAGE_TAG__ found in infra/k8s/" && exit 1
+          mapfile -t ALL_MANIFESTS < <(find infra/k8s/ \( -name '*.yaml' -o -name '*.yml' \) -type f)
+          if [ ${#ALL_MANIFESTS[@]} -eq 0 ]; then
+            echo "ERROR: No YAML manifests found in infra/k8s/" && exit 1
           fi
-          for f in "${MANIFESTS[@]}"; do
-            grep -q '__ACR_NAME__' "$f" || { echo "ERROR: Missing __ACR_NAME__ in $f"; exit 1; }
+          substituted=0
+          for f in "${ALL_MANIFESTS[@]}"; do
+            if grep -q '__IMAGE_TAG__\|__ACR_NAME__' "$f"; then
+              grep -q '__IMAGE_TAG__' "$f" || echo "WARN: $f has __ACR_NAME__ but not __IMAGE_TAG__"
+              sed -i -e "s|__IMAGE_TAG__|${IMAGE_TAG}|g" -e "s|__ACR_NAME__|${ACR_NAME}|g" "$f"
+              substituted=$((substituted + 1))
+            fi
           done
-          for f in "${MANIFESTS[@]}"; do
-            sed -i -e "s|__IMAGE_TAG__|${IMAGE_TAG}|g" -e "s|__ACR_NAME__|${ACR_NAME}|g" "$f"
-          done
+          if [ "$substituted" -eq 0 ]; then
+            echo "ERROR: No manifests contained __IMAGE_TAG__ or __ACR_NAME__ placeholders" && exit 1
+          fi
 
       - name: Create or update Kubernetes secret
         env:
@@ -191,12 +202,18 @@ jobs:
           KEY_VAULT_URL: ${{ secrets.KEY_VAULT_URL }}
           ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
         run: |
+          set +x  # prevent secret values appearing in xtrace output
           set -euo pipefail
+          # Write secret values to a chmod-600 temp file via heredoc to keep them
+          # out of process argument lists (which can appear in logs or error output).
+          TMPFILE=$(mktemp)
+          trap 'rm -f "$TMPFILE"' EXIT
+          chmod 600 "$TMPFILE"
+          printf 'azure-storage-connection-string=%s\nkey-vault-url=%s\nallowed-origins=%s\n' \
+            "${AZURE_STORAGE_CONNECTION_STRING}" "${KEY_VAULT_URL}" "${ALLOWED_ORIGINS}" > "$TMPFILE"
           kubectl create secret generic options-backend-secrets \
-            --from-literal=azure-storage-connection-string="${AZURE_STORAGE_CONNECTION_STRING}" \
-            --from-literal=key-vault-url="${KEY_VAULT_URL}" \
-            --from-literal=allowed-origins="${ALLOWED_ORIGINS}" \
             --namespace="${NAMESPACE}" \
+            --from-env-file="$TMPFILE" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Validate Kubernetes manifests (dry-run)
@@ -204,13 +221,15 @@ jobs:
         # --request-timeout guards against cluster unavailability blocking the pipeline.
         env:
           NAMESPACE: ${{ env.K8S_NAMESPACE }}
-        run: kubectl apply -f infra/k8s/ --dry-run=server --namespace="$NAMESPACE" --request-timeout=30s
+        run: kubectl apply -f infra/k8s/backend/ --dry-run=server --namespace="$NAMESPACE" --request-timeout=30s
 
       - name: Apply Kubernetes manifests
         id: apply
         env:
           NAMESPACE: ${{ env.K8S_NAMESPACE }}
-        run: kubectl apply -f infra/k8s/ --server-side --force-conflicts --namespace="$NAMESPACE"
+        run: kubectl apply -f infra/k8s/backend/ --server-side --namespace="$NAMESPACE"
+        # --force-conflicts intentionally omitted; add back only if a specific
+        # field-manager conflict is identified and understood.
 
       - name: Wait for rollout to complete
         id: rollout_wait
@@ -252,23 +271,33 @@ jobs:
           INGRESS_NAME: ${{ vars.BACKEND_INGRESS_NAME || 'backend' }}
         run: |
           set -euo pipefail
-          # Use the first host from the ingress spec (nip.io hostname) for TLS smoke test.
-          BACKEND_URL=$(kubectl get ingress "${INGRESS_NAME}" -n "${{ env.K8S_NAMESPACE }}" -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)
+          # Poll status.loadBalancer.ingress[0].hostname to wait for the cloud
+          # load-balancer to assign a routable address before attempting curl.
+          # This restores the safety that was lost when the original polling loop
+          # was removed. 12 attempts × 10 s = up to 2 minutes.
+          BACKEND_URL=""
+          for i in $(seq 1 12); do
+            BACKEND_URL=$(kubectl get ingress "${INGRESS_NAME}" -n "${{ env.K8S_NAMESPACE }}" \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            [ -n "$BACKEND_URL" ] && break
+            echo "Waiting for ingress hostname... attempt $i/12"
+            sleep 10
+          done
           if [ -z "$BACKEND_URL" ]; then
-            echo "ERROR: No ingress host found on '${INGRESS_NAME}'" && exit 1
+            echo "ERROR: Ingress hostname not assigned after 2 minutes" && exit 1
           fi
-          # Retry loop to wait for TLS certificate provisioning before running the smoke test.
-          # --insecure is intentionally avoided; instead we poll until the cert is valid.
-          # TODO: automate cert-readiness signalling to remove the need for this retry loop.
-          max_attempts=10
-          attempt=0
-          until curl --fail --max-time 15 "https://${BACKEND_URL}/health"; do
-            attempt=$((attempt + 1))
-            if [ "$attempt" -ge "$max_attempts" ]; then
-              echo "ERROR: Smoke test failed after $max_attempts attempts" && exit 1
+          # Poll on actual HTTP reachability to wait for DNS propagation and TLS certificate
+          # provisioning. --insecure is intentionally avoided; we poll until the cert is valid.
+          # 18 attempts × 10 s = up to 3 minutes total.
+          # --show-error (-S) ensures curl prints error messages to stderr even in --silent mode,
+          # aiding post-failure diagnosis without adding progress noise.
+          for i in $(seq 1 18); do
+            curl --silent --show-error --fail --max-time 10 "https://${BACKEND_URL}/health" && break
+            echo "Waiting for endpoint to become reachable... attempt $i/18"
+            if [ "$i" -eq 18 ]; then
+              echo "ERROR: Smoke test failed after 18 attempts" && exit 1
             fi
-            echo "Attempt $attempt/$max_attempts — waiting 30s before retry..."
-            sleep 30
+            sleep 10
           done
 
   deploy-frontend:
