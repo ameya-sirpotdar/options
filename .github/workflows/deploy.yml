@@ -102,12 +102,13 @@ jobs:
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
           KEY_VAULT_URL: ${{ secrets.KEY_VAULT_URL }}
+          ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
           AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
         run: |
           set +x  # prevent accidental value echo via xtrace
           missing=0
-          for secret in ACR_NAME AKS_CLUSTER_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_STORAGE_CONNECTION_STRING KEY_VAULT_URL; do
+          for secret in ACR_NAME AKS_CLUSTER_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_STORAGE_CONNECTION_STRING KEY_VAULT_URL ALLOWED_ORIGINS; do
             if [ -z "${!secret}" ]; then
               echo "ERROR: Required secret '$secret' is not set"
               missing=1
@@ -200,15 +201,23 @@ jobs:
         run: |
           set +x  # prevent secret values appearing in xtrace output
           set -euo pipefail
-          if [ -z "${ALLOWED_ORIGINS}" ]; then
-            echo "ERROR: ALLOWED_ORIGINS variable is not set" && exit 1
-          fi
-          kubectl create secret generic options-backend-secrets \
-            --from-literal=azure-storage-connection-string="${AZURE_STORAGE_CONNECTION_STRING}" \
-            --from-literal=key-vault-url="${KEY_VAULT_URL}" \
-            --from-literal=allowed-origins="${ALLOWED_ORIGINS}" \
-            --namespace="${NAMESPACE}" \
-            --dry-run=client -o yaml | kubectl apply -f -
+          # Write secret values to a chmod-600 temp file via heredoc to keep them
+          # out of process argument lists (which can appear in logs or error output).
+          TMPFILE=$(mktemp)
+          trap 'rm -f "$TMPFILE"' EXIT
+          chmod 600 "$TMPFILE"
+          cat > "$TMPFILE" <<EOF
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: options-backend-secrets
+            namespace: ${NAMESPACE}
+          stringData:
+            azure-storage-connection-string: "${AZURE_STORAGE_CONNECTION_STRING}"
+            key-vault-url: "${KEY_VAULT_URL}"
+            allowed-origins: "${ALLOWED_ORIGINS}"
+          EOF
+          kubectl apply -f "$TMPFILE"
 
       - name: Validate Kubernetes manifests (dry-run)
         # Server-side dry-run is used intentionally to exercise admission webhooks.
@@ -265,17 +274,33 @@ jobs:
           INGRESS_NAME: ${{ vars.BACKEND_INGRESS_NAME || 'backend' }}
         run: |
           set -euo pipefail
-          # The ingress hostname is a static field set at manifest-apply time, so it is
-          # available immediately after kubectl apply. Fetch it once rather than polling.
-          BACKEND_URL=$(kubectl get ingress "${INGRESS_NAME}" -n "${{ env.K8S_NAMESPACE }}" -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)
+          # Poll status.loadBalancer.ingress[0].hostname to wait for the cloud
+          # load-balancer to assign a routable address before attempting curl.
+          # This restores the safety that was lost when the original polling loop
+          # was removed. 12 attempts × 10 s = up to 2 minutes.
+          BACKEND_URL=""
+          for i in $(seq 1 12); do
+            BACKEND_URL=$(kubectl get ingress "${INGRESS_NAME}" -n "${{ env.K8S_NAMESPACE }}" \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            [ -n "$BACKEND_URL" ] && break
+            echo "Waiting for ingress hostname... attempt $i/12"
+            sleep 10
+          done
+          # Fall back to spec.rules[0].host for clusters with a pre-known static hostname.
           if [ -z "$BACKEND_URL" ]; then
-            echo "ERROR: No ingress host found on '${INGRESS_NAME}'" && exit 1
+            BACKEND_URL=$(kubectl get ingress "${INGRESS_NAME}" -n "${{ env.K8S_NAMESPACE }}" \
+              -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)
+          fi
+          if [ -z "$BACKEND_URL" ]; then
+            echo "ERROR: Ingress hostname not assigned after 2 minutes" && exit 1
           fi
           # Poll on actual HTTP reachability to wait for DNS propagation and TLS certificate
           # provisioning. --insecure is intentionally avoided; we poll until the cert is valid.
           # 18 attempts × 10 s = up to 3 minutes total.
+          # --show-error (-S) ensures curl prints error messages to stderr even in --silent mode,
+          # aiding post-failure diagnosis without adding progress noise.
           for i in $(seq 1 18); do
-            curl --silent --fail --max-time 10 "https://${BACKEND_URL}/health" && break
+            curl --silent --show-error --fail --max-time 10 "https://${BACKEND_URL}/health" && break
             echo "Waiting for endpoint to become reachable... attempt $i/18"
             if [ "$i" -eq 18 ]; then
               echo "ERROR: Smoke test failed after 18 attempts" && exit 1
