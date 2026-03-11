@@ -1,6 +1,5 @@
-from fastapi import APIRouter, HTTPException, Query
-from typing import List
-from backend.models.poll import PollOptionsResponse
+from fastapi import APIRouter, Depends, HTTPException, Response
+from backend.models.poll import OptionsChainRequest, PollOptionsResponse
 from backend.services.polling_service import PollingService
 
 router = APIRouter()
@@ -8,9 +7,10 @@ polling_service = PollingService()
 
 
 @router.get("/options-chain", response_model=PollOptionsResponse)
-async def get_options_chain(tickers: List[str] = Query(...)):
+async def get_options_chain(request: OptionsChainRequest = Depends(), response: Response = None):
+    response.headers["Cache-Control"] = "no-store"
     try:
-        results = polling_service.poll_options(tickers)
-        return PollOptionsResponse(tickers=tickers, results=results)
+        results = polling_service.poll_options(request.tickers)
+        return PollOptionsResponse(tickers=request.tickers, results=results)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
