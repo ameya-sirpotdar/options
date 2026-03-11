@@ -25,16 +25,8 @@ class PollingService:
         try:
             if self._schwab_client is not None:
                 for ticker in tickers:
-                    try:
-                        chain = self._schwab_client.get_option_chain(ticker)
-                        raw_result[ticker] = chain
-                    except Exception as ticker_exc:
-                        logger.warning(
-                            "SchwabClient failed to fetch chain for %s: %s",
-                            ticker,
-                            ticker_exc,
-                        )
-                        raw_result[ticker] = {}
+                    chain = self._schwab_client.get_option_chain(ticker)
+                    raw_result[ticker] = chain
             else:
                 raw_result = run_options_poll(tickers)
         except Exception as exc:
