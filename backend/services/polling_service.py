@@ -11,8 +11,9 @@ logger = logging.getLogger(__name__)
 
 
 class PollingService:
-    def __init__(self, azure_table_service=None):
+    def __init__(self, azure_table_service=None, schwab_client=None):
         self._azure_table_service = azure_table_service
+        self._schwab_client = schwab_client
 
     def poll_options(self, tickers: List[str]) -> Dict[str, Any]:
         run_id = str(uuid.uuid4())
@@ -22,7 +23,20 @@ class PollingService:
 
         raw_result: Dict[str, Any] = {}
         try:
-            raw_result = run_options_poll(tickers)
+            if self._schwab_client is not None:
+                for ticker in tickers:
+                    try:
+                        chain = self._schwab_client.get_option_chain(ticker)
+                        raw_result[ticker] = chain
+                    except Exception as ticker_exc:
+                        logger.warning(
+                            "SchwabClient failed to fetch chain for %s: %s",
+                            ticker,
+                            ticker_exc,
+                        )
+                        raw_result[ticker] = {}
+            else:
+                raw_result = run_options_poll(tickers)
         except Exception as exc:
             logger.exception("Options poll agent raised an exception: %s", exc)
             error_message = str(exc)
