@@ -32,6 +32,7 @@ class PollingService:
         except Exception as exc:
             logger.exception("Options poll agent raised an exception: %s", exc)
             error_message = str(exc)
+            raise
 
         if self._azure_table_service is not None:
             contracts: List[OptionsContractRecord] = []
