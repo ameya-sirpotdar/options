@@ -32,10 +32,15 @@ class OptionsChainRequest(BaseModel):
 
     @model_validator(mode="after")
     def deduplicate_and_limit(self) -> "OptionsChainRequest":
-        seen = list(dict.fromkeys(self.tickers))
-        if len(seen) > 10:
+        seen = set()
+        deduped = []
+        for ticker in self.tickers:
+            if ticker not in seen:
+                seen.add(ticker)
+                deduped.append(ticker)
+        if len(deduped) > 10:
             raise ValueError("cannot request more than 10 tickers at once")
-        self.tickers = seen
+        self.tickers = deduped
         return self
 
 
