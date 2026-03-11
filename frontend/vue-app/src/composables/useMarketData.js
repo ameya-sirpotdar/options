@@ -1,9 +1,10 @@
 import { ref, computed } from 'vue'
-import { getOptionsChain, calculateTrades } from '../api/endpoints.js'
+import { pollOptions, calculateTrades } from '../api/endpoints.js'
 
 export function useMarketData() {
   const delta = ref(0.30)
   const expiry = ref('')
+  const tickers = ref('')
   const vix = ref(null)
   const options = ref([])
   const bestTrade = ref(null)
@@ -14,7 +15,9 @@ export function useMarketData() {
 
   const hasOptions = computed(() => options.value.length > 0)
   const hasBestTrade = computed(() => bestTrade.value !== null)
-  const canPoll = computed(() => expiry.value !== '' && !isPolling.value)
+  const canPoll = computed(
+    () => expiry.value !== '' && tickers.value.length > 0 && !isPolling.value
+  )
   const canCalculate = computed(() => hasOptions.value && !isCalculating.value)
 
   async function fetchMarketData() {
@@ -27,12 +30,19 @@ export function useMarketData() {
     bestTrade.value = null
 
     try {
-      const response = await getOptionsChain({
+      // Parse comma-separated string into array before sending to API
+      const tickerArray = tickers.value
+        .split(',')
+        .map(t => t.trim())
+        .filter(Boolean)
+      const response = await pollOptions({
+        tickers: tickerArray,
         delta: delta.value,
         expiry: expiry.value,
       })
 
-      options.value = response.options ?? []
+      // Backend returns { rows: [...], vix: number }
+      options.value = response.rows ?? response.options ?? []
       vix.value = response.vix ?? null
     } catch (err) {
       pollError.value =
@@ -73,6 +83,7 @@ export function useMarketData() {
   function resetAll() {
     delta.value = 0.30
     expiry.value = ''
+    tickers.value = ''
     vix.value = null
     options.value = []
     bestTrade.value = null
@@ -85,6 +96,7 @@ export function useMarketData() {
   return {
     delta,
     expiry,
+    tickers,
     vix,
     options,
     bestTrade,

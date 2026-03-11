@@ -3,6 +3,20 @@
     <h2 class="input-panel__title">Market Parameters</h2>
 
     <div class="input-panel__field">
+      <label for="tickers-input" class="input-panel__label">Tickers</label>
+      <input
+        id="tickers-input"
+        v-model="localTickers"
+        type="text"
+        class="input-panel__text"
+        placeholder="e.g. AAPL, MSFT, SPY"
+        aria-required="true"
+        @change="emitTickers"
+      />
+      <p class="input-panel__hint">Comma-separated list of ticker symbols</p>
+    </div>
+
+    <div class="input-panel__field">
       <label for="delta-slider" class="input-panel__label">
         Delta
         <span class="input-panel__value-badge">{{ formattedDelta }}</span>
@@ -98,6 +112,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  tickers: {
+    type: String,
+    default: '',
+  },
   vix: {
     type: Number,
     default: null,
@@ -123,12 +141,14 @@ const props = defineProps({
 const emit = defineEmits([
   'update:delta',
   'update:expiry',
+  'update:tickers',
   'poll',
   'calculate',
 ])
 
 const localDelta = ref(props.delta)
 const localExpiry = ref(props.expiry)
+const localTickers = ref(props.tickers)
 
 watch(
   () => props.delta,
@@ -141,6 +161,13 @@ watch(
   () => props.expiry,
   (val) => {
     localExpiry.value = val
+  },
+)
+
+watch(
+  () => props.tickers,
+  (val) => {
+    localTickers.value = val
   },
 )
 
@@ -157,8 +184,19 @@ const minDate = computed(() => {
   return tomorrow.toISOString().split('T')[0]
 })
 
+const parsedTickers = computed(() =>
+  localTickers.value
+    .split(',')
+    .map((t) => t.trim().toUpperCase())
+    .filter((t) => t.length > 0),
+)
+
 const isPollDisabled = computed(
-  () => !localExpiry.value || props.isPolling || props.isCalculating,
+  () =>
+    !localExpiry.value ||
+    parsedTickers.value.length === 0 ||
+    props.isPolling ||
+    props.isCalculating,
 )
 
 const isCalcDisabled = computed(
@@ -173,9 +211,13 @@ function emitExpiry() {
   emit('update:expiry', localExpiry.value)
 }
 
+function emitTickers() {
+  emit('update:tickers', localTickers.value)
+}
+
 function handlePoll() {
   if (isPollDisabled.value) return
-  emit('poll')
+  emit('poll', parsedTickers.value)
 }
 
 function handleCalculate() {
@@ -243,6 +285,30 @@ function handleCalculate() {
   justify-content: space-between;
   font-size: 0.75rem;
   color: var(--color-text-muted, #718096);
+}
+
+.input-panel__text {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--color-text-primary, #1a202c);
+  background: var(--color-surface, #ffffff);
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+}
+
+.input-panel__text:focus {
+  outline: none;
+  border-color: var(--color-accent, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.input-panel__hint {
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #718096);
+  margin: 0;
 }
 
 .input-panel__date {

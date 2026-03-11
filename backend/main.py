@@ -10,6 +10,8 @@ from backend.api.poll import router as poll_router
 from backend.api.routers.health import router as health_router
 from backend.api.routers.trades import router as trades_router
 from backend.services.azure_table_service import AzureTableService
+from backend.services.schwab_client import SchwabClient
+from backend.services.schwab_auth import SchwabAuth
 
 configure_logging()
 
@@ -37,6 +39,7 @@ app.include_router(trades_router)
 
 @app.on_event("startup")
 async def startup_event() -> None:
+    # ── AzureTableService ────────────────────────────────────────────────────
     connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
     if connection_string:
         try:
@@ -54,3 +57,16 @@ async def startup_event() -> None:
             "AzureTableService will not be available"
         )
         app.state.azure_table_service = None
+
+    # ── SchwabClient ─────────────────────────────────────────────────────────
+    try:
+        vault_url = os.getenv("AZURE_KEY_VAULT_URL")  # optional
+        schwab_auth = SchwabAuth(vault_url=vault_url)
+        schwab_client = SchwabClient(auth=schwab_auth)
+        app.state.schwab_client = schwab_client
+        logger.info("SchwabClient initialised and attached to app.state")
+    except Exception as exc:
+        logger.warning(
+            "SchwabClient could not be initialised at startup: %s", exc
+        )
+        app.state.schwab_client = None
