@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import ValidationError
-from typing import List
 from backend.models.poll import OptionsChainRequest, PollOptionsResponse
 from backend.services.polling_service import PollingService
 
@@ -9,7 +8,7 @@ polling_service = PollingService()
 
 
 class OptionsChainRequestDep:
-    def __init__(self, tickers: List[str] = Query(..., description="Ticker symbols")):
+    def __init__(self, tickers: list[str] = Query(..., description="Ticker symbols")):
         try:
             validated = OptionsChainRequest(tickers=tickers)
         except ValidationError as e:
