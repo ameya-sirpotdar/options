@@ -4,10 +4,18 @@ const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 15000,
   headers: {
-    'Content-Type': 'application/json',
     Accept: 'application/json',
   },
 })
+
+export function fetchOptionsChain(tickerArray) {
+  return apiClient.get('/options-chain', {
+    params: { tickers: tickerArray },
+    paramsSerializer: (params) => {
+      return params.tickers.map((t) => `tickers=${encodeURIComponent(t)}`).join('&')
+    },
+  })
+}
 
 apiClient.interceptors.request.use(
   (config) => {

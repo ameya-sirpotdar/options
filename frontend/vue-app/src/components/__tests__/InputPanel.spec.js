@@ -68,9 +68,9 @@ describe('InputPanel', () => {
     expect(wrapper.text()).toContain('18.45')
   })
 
-  it('renders the Poll Market Data button', () => {
+  it('renders the Fetch Options Chain button', () => {
     const buttons = wrapper.findAll('button')
-    const pollButton = buttons.find(b => b.text().includes('Poll Market Data'))
+    const pollButton = buttons.find(b => b.text().includes('Fetch Options Chain'))
     expect(pollButton).toBeTruthy()
   })
 
@@ -80,9 +80,9 @@ describe('InputPanel', () => {
     expect(calcButton).toBeTruthy()
   })
 
-  it('emits poll event when Poll Market Data button is clicked', async () => {
+  it('emits poll event when Fetch Options Chain button is clicked', async () => {
     const buttons = wrapper.findAll('button')
-    const pollButton = buttons.find(b => b.text().includes('Poll Market Data'))
+    const pollButton = buttons.find(b => b.text().includes('Fetch Options Chain'))
     await pollButton.trigger('click')
     expect(wrapper.emitted('poll')).toBeTruthy()
   })

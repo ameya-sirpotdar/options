@@ -1,7 +1,7 @@
 import apiClient from './client.js'
 
 export async function pollOptions({ delta, expiry }) {
-  const response = await apiClient.get('/options/poll', {
+  const response = await apiClient.get('/options-chain', {
     params: { delta, expiry },
   })
   return response.data

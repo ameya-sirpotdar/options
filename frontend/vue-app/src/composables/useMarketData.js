@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import { pollOptions, calculateTrades } from '../api/endpoints.js'
+import { getOptionsChain, calculateTrades } from '../api/endpoints.js'
 
 export function useMarketData() {
   const delta = ref(0.30)
@@ -27,7 +27,7 @@ export function useMarketData() {
     bestTrade.value = null
 
     try {
-      const response = await pollOptions({
+      const response = await getOptionsChain({
         delta: delta.value,
         expiry: expiry.value,
       })
