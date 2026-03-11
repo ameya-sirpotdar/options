@@ -69,7 +69,6 @@ const {
   fetchBestTrade: calculateTrades,
 } = useMarketData()
 
-const loading = ref(false)
 const pollError = ref(null)
 const calculateError = ref(null)
 
