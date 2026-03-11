@@ -166,6 +166,7 @@ class PollingService:
                 )
 
         if ticker_errors and not raw_result:
-            raise RuntimeError(error_message)
+            combined = "; ".join(f"{t}: {e}" for t, e in ticker_errors.items())
+            raise RuntimeError(f"All tickers failed: {combined}")
 
         return raw_result
