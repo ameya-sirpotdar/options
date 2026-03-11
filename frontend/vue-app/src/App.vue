@@ -14,7 +14,7 @@
         :loading="loading"
         @update:delta="delta = $event"
         @update:expiry="expiry = $event"
-        @update:tickers="tickers = $event"
+        @update:tickers="tickers = $event.split(',').map(t => t.trim()).filter(Boolean)"
         @poll="handlePoll"
         @calculate="handleCalculate"
       />
