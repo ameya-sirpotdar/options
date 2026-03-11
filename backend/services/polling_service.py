@@ -21,18 +21,23 @@ class PollingService:
         contracts_persisted = 0
         error_message: Optional[str] = None
 
+        ticker_errors: Dict[str, str] = {}
         raw_result: Dict[str, Any] = {}
         try:
             if self._schwab_client is not None:
                 for ticker in tickers:
-                    chain = self._schwab_client.get_option_chain(ticker)
-                    raw_result[ticker] = chain
+                    try:
+                        chain = self._schwab_client.get_option_chain(ticker)
+                        raw_result[ticker] = chain
+                    except Exception as ticker_exc:
+                        logger.exception("Failed to fetch chain for %s: %s", ticker, ticker_exc)
+                        ticker_errors[ticker] = str(ticker_exc)
             else:
                 raw_result = run_options_poll(tickers)
         except Exception as exc:
             logger.exception("Options poll agent raised an exception: %s", exc)
             error_message = str(exc)
-            raise
+            # do NOT raise here — fall through to persistence
 
         if self._azure_table_service is not None:
             contracts: List[OptionsContractRecord] = []
