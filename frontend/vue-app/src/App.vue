@@ -11,10 +11,11 @@
         :expiry="expiry"
         :vix="vix"
         :tickers="tickers"
-        :loading="loading"
+        :isPolling="polling"
+        :isCalculating="calculating"
         @update:delta="delta = $event"
         @update:expiry="expiry = $event"
-        @update:tickers="tickers.value = $event"
+        @update:tickers="tickers = $event"
         @poll="handlePoll"
         @calculate="handleCalculate"
       />
