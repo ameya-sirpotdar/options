@@ -10,9 +10,11 @@
         :delta="delta"
         :expiry="expiry"
         :vix="vix"
+        :tickers="tickers"
         :loading="loading"
         @update:delta="delta = $event"
         @update:expiry="expiry = $event"
+        @update:tickers="tickers = $event"
         @poll="handlePoll"
         @calculate="handleCalculate"
       />
@@ -30,7 +32,7 @@
       </section>
 
       <OptionsTable
-        :options="options"
+        :rows="options"
         :loading="polling"
       />
 
@@ -57,6 +59,7 @@ const {
   delta,
   expiry,
   vix,
+  tickers,
   options,
   bestTrade,
   isPolling: polling,
