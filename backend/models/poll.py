@@ -2,7 +2,7 @@ from pydantic import BaseModel, field_validator, model_validator
 from typing import Any, Dict, List, Optional
 
 
-class PollOptionsRequest(BaseModel):
+class OptionsChainRequest(BaseModel):
     tickers: List[str]
 
     @field_validator("tickers")
@@ -31,15 +31,19 @@ class PollOptionsRequest(BaseModel):
         return normalised
 
     @model_validator(mode="after")
-    def deduplicate_and_limit(self) -> "PollOptionsRequest":
+    def deduplicate_and_limit(self) -> "OptionsChainRequest":
         seen = []
         for ticker in self.tickers:
             if ticker not in seen:
                 seen.append(ticker)
         if len(seen) > 10:
-            raise ValueError("cannot poll more than 10 tickers at once")
+            raise ValueError("cannot request more than 10 tickers at once")
         self.tickers = seen
         return self
+
+
+# Backwards-compatible alias
+PollOptionsRequest = OptionsChainRequest
 
 
 class PollOptionsResponse(BaseModel):
