@@ -1,5 +1,10 @@
+import asyncio
 import logging
 import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,7 +50,7 @@ async def startup_event() -> None:
     connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
     if connection_string:
         try:
-            azure_table_service = AzureTableService(connection_string=connection_string)
+            azure_table_service = await asyncio.to_thread(AzureTableService, connection_string=connection_string)
             app.state.azure_table_service = azure_table_service
             logger.info("AzureTableService initialised and attached to app.state")
         except Exception as exc:
