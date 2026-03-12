@@ -2,69 +2,72 @@ from datetime import date
 from typing import Optional
 
 
-def compute_days_to_expiration(expiration_date: date, reference_date: Optional[date] = None) -> int:
+def compute_days_to_expiration(expiration_date: date, today: Optional[date] = None) -> int:
     """
-    Compute the number of calendar days between reference_date and expiration_date.
+    Compute the number of calendar days between today and expiration_date.
 
     Parameters
     ----------
     expiration_date : date
         The option's expiration date.
-    reference_date : date, optional
+    today : date, optional
         The date from which to measure. Defaults to today (date.today()).
 
     Returns
     -------
     int
-        Number of days until expiration. Returns 0 if expiration_date is in the past.
+        Number of days until expiration. Negative if expiration_date is in the past.
     """
-    if reference_date is None:
-        reference_date = date.today()
+    if today is None:
+        today = date.today()
 
-    delta = (expiration_date - reference_date).days
-    return max(delta, 0)
+    delta = (expiration_date - today).days
+    return delta
 
 
 def compute_annualized_roi(
     premium: float,
-    strike_price: float,
+    strike: float,
     days_to_expiration: int,
 ) -> Optional[float]:
     """
     Compute the annualized return on investment for a Cash Covered Put (CCP).
 
     The formula is:
-        annualized_roi = (premium / strike_price) * (365 / days_to_expiration)
+        annualized_roi = (premium / strike) * (365 / days_to_expiration)
 
     Parameters
     ----------
     premium : float
         The option premium received (per share, not per contract).
-    strike_price : float
+    strike : float
         The strike price of the put option.
     days_to_expiration : int
         Number of calendar days until the option expires.
 
     Returns
     -------
-    float or None
-        Annualized ROI as a decimal (e.g. 0.15 means 15%). Returns None if
-        strike_price is zero or days_to_expiration is zero, to avoid
-        division-by-zero errors.
+    float
+        Annualized ROI as a decimal (e.g. 0.15 means 15%).
+
+    Raises
+    ------
+    ValueError
+        If strike is zero/negative or days_to_expiration is zero/negative.
     """
-    if strike_price == 0 or days_to_expiration == 0:
-        return None
+    if days_to_expiration <= 0:
+        raise ValueError("days_to_expiration must be a positive integer.")
 
-    if premium < 0 or strike_price < 0:
-        return None
+    if strike <= 0:
+        raise ValueError("strike must be a positive number.")
 
-    roi = (premium / strike_price) * (365.0 / days_to_expiration)
+    roi = (premium / strike) * (365.0 / days_to_expiration)
     return roi
 
 
 def enrich_put_options_with_roi(
     put_options: list[dict],
-    reference_date: Optional[date] = None,
+    today: Optional[date] = None,
 ) -> list[dict]:
     """
     Enrich a list of put option records with annualized_roi and days_to_expiration.
@@ -73,66 +76,84 @@ def enrich_put_options_with_roi(
         - "expiration_date": a date object (or ISO-format string "YYYY-MM-DD")
         - "strike": numeric strike price
         - "bid": numeric bid price used as the conservative premium estimate
+        - "option_type": string, only records with "put" (case-insensitive) are enriched
 
-    The function adds two keys to each record (mutating the dicts in-place and
-    also returning the list for convenience):
-        - "days_to_expiration": int
-        - "annualized_roi": float or None
+    Non-put records are copied unchanged into the returned list.
+    The function returns a new list of new dicts (originals are not mutated).
 
     Parameters
     ----------
     put_options : list[dict]
-        List of put option data dictionaries.
-    reference_date : date, optional
+        List of option data dictionaries.
+    today : date, optional
         Reference date for DTE calculation. Defaults to date.today().
 
     Returns
     -------
     list[dict]
-        The same list with each dict enriched in-place.
+        A new list of dicts; put records are enriched with
+        "days_to_expiration" and "annualized_roi".
     """
-    if reference_date is None:
-        reference_date = date.today()
+    if today is None:
+        today = date.today()
+
+    enriched = []
 
     for option in put_options:
-        expiration_raw = option.get("expiration_date")
+        record = dict(option)
+
+        if str(record.get("option_type", "")).lower() != "put":
+            enriched.append(record)
+            continue
+
+        expiration_raw = record.get("expiration_date")
 
         if expiration_raw is None:
-            option["days_to_expiration"] = 0
-            option["annualized_roi"] = None
+            record["days_to_expiration"] = 0
+            record["annualized_roi"] = None
+            enriched.append(record)
             continue
 
         if isinstance(expiration_raw, str):
             try:
                 expiration_date = date.fromisoformat(expiration_raw)
             except ValueError:
-                option["days_to_expiration"] = 0
-                option["annualized_roi"] = None
+                record["days_to_expiration"] = 0
+                record["annualized_roi"] = None
+                enriched.append(record)
                 continue
         elif isinstance(expiration_raw, date):
             expiration_date = expiration_raw
         else:
-            option["days_to_expiration"] = 0
-            option["annualized_roi"] = None
+            record["days_to_expiration"] = 0
+            record["annualized_roi"] = None
+            enriched.append(record)
             continue
 
-        dte = compute_days_to_expiration(expiration_date, reference_date)
-        option["days_to_expiration"] = dte
+        dte = compute_days_to_expiration(expiration_date, today)
+        record["days_to_expiration"] = dte
 
-        strike = option.get("strike")
-        premium = option.get("bid")
+        strike = record.get("strike")
+        premium = record.get("bid")
 
         if strike is None or premium is None:
-            option["annualized_roi"] = None
+            record["annualized_roi"] = None
+            enriched.append(record)
             continue
 
         try:
             strike = float(strike)
             premium = float(premium)
         except (TypeError, ValueError):
-            option["annualized_roi"] = None
+            record["annualized_roi"] = None
+            enriched.append(record)
             continue
 
-        option["annualized_roi"] = compute_annualized_roi(premium, strike, dte)
+        try:
+            record["annualized_roi"] = compute_annualized_roi(premium, strike, dte)
+        except ValueError:
+            record["annualized_roi"] = None
 
-    return put_options
+        enriched.append(record)
+
+    return enriched
