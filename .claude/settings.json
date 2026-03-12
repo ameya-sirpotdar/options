@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Bash(git status)",
+      "Bash(git log*)",
+      "Bash(git diff*)",
+      "Bash(git branch*)",
+      "Bash(git show*)",
+      "Bash(git stash list*)",
+      "Bash(python*)",
+      "Bash(pytest*)",
+      "Bash(pip*)",
+      "Bash(uvicorn*)",
+      "Bash(npm*)",
+      "Bash(node*)",
+      "Bash(cat*)",
+      "Bash(ls*)",
+      "Bash(head*)",
+      "Bash(tail*)",
+      "Bash(wc*)",
+      "Bash(echo*)",
+      "Bash(mkdir*)",
+      "Bash(touch*)",
+      "Bash(pwd)",
+      "Bash(cd*)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(git push --force*)"
+    ]
+  }
+}
