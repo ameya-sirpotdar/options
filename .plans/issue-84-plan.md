@@ -19,53 +19,30 @@ The implementation will:
 
 ---
 
-## Files to Create
+## Commit & Push Plan
 
-### `backend/services/ccp_calculator.py`
-Pure computation module for CCP annualized ROI. Contains:
-- `compute_days_to_expiration(expiration_date: date, current_date: date | None = None) -> int`
-- `compute_annualized_roi(bid: float, strike: float, days_to_expiration: int) -> float`
-- `enrich_put_options_with_roi(options: list[dict], current_date: date | None = None) -> list[dict]` — iterates over put option records and appends `annualized_roi` to each
-
-### `tests/services/test_ccp_calculator.py`
-Unit tests for the calculator module covering:
-- Correct formula output (example from issue: strike=600, bid=7, dte=9 → ~0.00473)
-- Zero bid edge case (ROI = 0)
-- DTE = 1 (minimum expiration)
-- Zero strike guard (should raise ValueError or return None)
-- Zero DTE guard (should raise ValueError or return None)
-- Negative bid handling
-- `enrich_put_options_with_roi` with a list of mock put records
+Each commit is self-contained, passes CI, and represents a single logical change. Commits are ordered so that later commits always build on a green baseline.
 
 ---
 
-## Files to Modify
+### Commit 1 — `feat: add ccp_calculator service module`
 
-### `backend/models/options_data.py`
-- Add `annualized_roi: Optional[float] = None` field to the `OptionsData` Pydantic model (or equivalent dataclass/TypedDict)
-- Add `days_to_expiration: Optional[int] = None` field if not already present
+**Branch:** `feature/ccp-roi-calculator`
 
-### `backend/agents/options_data_agent.py`
-- Import `enrich_put_options_with_roi` from `backend.services.ccp_calculator`
-- After fetching and filtering put options, call `enrich_put_options_with_roi` on the list before returning/storing results
-- Ensure the enriched records are passed downstream in the agent state
+**What changes:**
+- Create `backend/services/ccp_calculator.py` with the three pure functions:
+  - `compute_days_to_expiration`
+  - `compute_annualized_roi`
+  - `enrich_put_options_with_roi`
 
-### `backend/services/schwab_filters.py`
-- Verify (and if needed, ensure) that `bid`, `strike`, and `expiration_date` are preserved in the filtered output — no changes expected but confirm field mapping
+**Why isolated:** The calculator has zero dependencies on the rest of the codebase. Landing it first means every subsequent commit can import from it without introducing a circular dependency or a broken import.
 
-### `tests/agents/test_options_data_agent.py`
-- Add test cases asserting that `annualized_roi` is present and correctly computed on the output records after agent execution
-- Mock `enrich_put_options_with_roi` to isolate agent logic from calculator logic
+**Files:**
+```
+backend/services/ccp_calculator.py   ← new
+```
 
-### `tests/test_options_data_model.py`
-- Add tests for the new `annualized_roi` and `days_to_expiration` optional fields on the model
-
----
-
-## Implementation Steps
-
-### Step 1 — Create `backend/services/ccp_calculator.py`
-
+**Code:**
 ```python
 from datetime import date
 from typing import Optional
@@ -89,8 +66,8 @@ def compute_annualized_roi(
 
     Formula: (bid * 365) / (strike * 100 * days_to_expiration)
 
-    Returns 0.0 if bid <= 0 or strike <= 0.
-    Raises ValueError if days_to_expiration < 1.
+    Returns 0.0 if bid <= 0.
+    Raises ValueError if strike <= 0 or days_to_expiration < 1.
     """
     if days_to_expiration < 1:
         raise ValueError(f"days_to_expiration must be >= 1, got {days_to_expiration}")
@@ -133,69 +110,186 @@ def enrich_put_options_with_roi(
     return enriched
 ```
 
-### Step 2 — Update `backend/models/options_data.py`
+**CI must pass:** import check, linting (ruff/flake8), type check (mypy).
 
-Add the two new optional fields to the model:
+---
 
+### Commit 2 — `test: add unit tests for ccp_calculator`
+
+**What changes:**
+- Create `tests/services/test_ccp_calculator.py` with full coverage of the calculator module
+
+**Why isolated:** Tests for the calculator are committed immediately after the module so the test suite is green before any integration work begins. Reviewers can verify correctness of the formula independently of the agent or model changes.
+
+**Files:**
+```
+tests/services/test_ccp_calculator.py   ← new
+```
+
+**Test cases covered:**
+
+| Test | Scenario | Expected |
+|---|---|---|
+| `test_happy_path` | strike=600, bid=7, dte=9 | ≈ 0.004731 |
+| `test_zero_bid` | bid=0 | 0.0 |
+| `test_negative_bid` | bid=-1 | 0.0 |
+| `test_dte_one` | dte=1 | formula result |
+| `test_zero_strike_raises` | strike=0 | `ValueError` |
+| `test_negative_strike_raises` | strike=-50 | `ValueError` |
+| `test_zero_dte_raises` | dte=0 | `ValueError` |
+| `test_enrich_happy_path` | 2 valid records | both have `annualized_roi` |
+| `test_enrich_missing_field` | 1 record missing `bid` | `annualized_roi=None` |
+| `test_enrich_string_expiration` | ISO string date | parsed and computed correctly |
+| `test_enrich_past_expiration` | expiration yesterday | `days_to_expiration=1` (floored) |
+
+**CI must pass:** all new tests green, coverage does not drop.
+
+---
+
+### Commit 3 — `feat: add annualized_roi and days_to_expiration to OptionsData model`
+
+**What changes:**
+- Add two optional fields to `backend/models/options_data.py`
+
+**Why isolated:** The model change is a pure, non-breaking addition. Landing it before the agent integration means the agent commit can reference the updated model without a forward dependency.
+
+**Files:**
+```
+backend/models/options_data.py   ← modified
+```
+
+**Diff (additions only):**
 ```python
 days_to_expiration: Optional[int] = None
 annualized_roi: Optional[float] = None
 ```
 
-### Step 3 — Integrate into `backend/agents/options_data_agent.py`
+**CI must pass:** existing model tests still green, Pydantic schema generation succeeds.
 
-After the agent retrieves and filters put options, call:
+---
 
+### Commit 4 — `test: add model tests for annualized_roi and days_to_expiration fields`
+
+**What changes:**
+- Update `tests/test_options_data_model.py` with tests for the two new fields
+
+**Why isolated:** Model tests are committed right after the model change, keeping the test-to-code ratio balanced and making it easy to bisect if a model regression appears later.
+
+**Files:**
+```
+tests/test_options_data_model.py   ← modified
+```
+
+**Test cases added:**
+
+| Test | Assertion |
+|---|---|
+| `test_annualized_roi_defaults_none` | field defaults to `None` |
+| `test_days_to_expiration_defaults_none` | field defaults to `None` |
+| `test_annualized_roi_accepts_float` | accepts `0.004731` |
+| `test_days_to_expiration_accepts_int` | accepts `9` |
+| `test_serialization_includes_new_fields` | both keys present in `.model_dump()` / `.dict()` |
+
+**CI must pass:** all tests green.
+
+---
+
+### Commit 5 — `feat: enrich put options with ROI in options_data_agent`
+
+**What changes:**
+- Import `enrich_put_options_with_roi` in `backend/agents/options_data_agent.py`
+- Call it on the filtered put options list before passing records downstream
+- Verify `backend/services/schwab_filters.py` preserves `bid`, `strike`, and `expiration_date` (comment added if confirmed, no code change expected)
+
+**Why isolated:** Agent integration is the only commit that wires the calculator into live data flow. Keeping it separate from the model and calculator commits means a revert here does not touch the model or the pure logic.
+
+**Files:**
+```
+backend/agents/options_data_agent.py     ← modified
+backend/services/schwab_filters.py      ← reviewed, comment added if needed
+```
+
+**Key change in agent:**
 ```python
 from backend.services.ccp_calculator import enrich_put_options_with_roi
 
 # ... existing fetch/filter logic ...
 enriched_puts = enrich_put_options_with_roi(filtered_puts)
-# pass enriched_puts downstream
+# pass enriched_puts downstream instead of filtered_puts
 ```
 
-### Step 4 — Write Tests
-
-Create `tests/services/test_ccp_calculator.py` with full coverage of the calculator.
-Update `tests/agents/test_options_data_agent.py` to assert ROI enrichment.
-Update `tests/test_options_data_model.py` for new fields.
-
-### Step 5 — Verify API Output
-
-Confirm that `backend/api/routers/options_chain.py` serializes the model fields correctly — since `annualized_roi` is added to the model, it should appear in JSON responses automatically via Pydantic serialization. No router changes expected unless the response schema explicitly excludes unknown fields.
+**CI must pass:** existing agent tests still green.
 
 ---
 
-## Test Strategy
+### Commit 6 — `test: add agent integration tests for ROI enrichment`
 
-### Unit Tests (`tests/services/test_ccp_calculator.py`)
-- **Happy path**: strike=600, bid=7, dte=9 → annualized_roi ≈ 0.004731
-- **Zero bid**: returns 0.0
-- **Negative bid**: returns 0.0
-- **DTE=1**: formula works at minimum expiration
-- **Zero strike**: raises ValueError
-- **DTE=0**: raises ValueError (or is floored to 1 depending on design choice)
-- **enrich_put_options_with_roi**: list of 3 records, one with missing field → that record gets `annualized_roi=None`, others computed correctly
-- **String expiration_date**: ISO string parsed correctly
+**What changes:**
+- Update `tests/agents/test_options_data_agent.py` with tests asserting ROI enrichment on agent output
 
-### Integration Tests (`tests/agents/test_options_data_agent.py`)
-- Mock Schwab API response with put options containing bid/strike/expiration_date
-- Assert agent output contains `annualized_roi` field on each record
-- Assert values are numerically correct
+**Why isolated:** Integration tests are committed after the agent change so the diff is reviewable on its own. Mocking `enrich_put_options_with_roi` in some tests and using the real function in others keeps unit and integration concerns explicit.
 
-### Model Tests (`tests/test_options_data_model.py`)
-- `annualized_roi` defaults to None
-- `days_to_expiration` defaults to None
-- Both fields accept float/int values
-- Serialization includes both fields in JSON output
+**Files:**
+```
+tests/agents/test_options_data_agent.py   ← modified
+```
+
+**Test cases added:**
+
+| Test | Strategy | Assertion |
+|---|---|---|
+| `test_agent_calls_enrich` | mock `enrich_put_options_with_roi` | mock called once with filtered puts |
+| `test_agent_output_has_annualized_roi` | real calculator, mocked Schwab API | `annualized_roi` present on each output record |
+| `test_agent_output_roi_value_correct` | real calculator, mocked Schwab API | value matches formula for known inputs |
+
+**CI must pass:** all tests green, no regressions.
 
 ---
 
-## Edge Cases to Handle
+### Commit 7 — `chore: verify API serialization of annualized_roi`
 
-1. **Zero or negative DTE** — can happen if expiration is in the past; floor at 1 or skip record
-2. **Zero bid** — valid scenario (deep OTM); return 0.0 ROI
-3. **Zero or negative strike** — invalid data; raise ValueError or return None
-4. **Missing fields** — `enrich_put_options_with_roi` should not crash; set `annualized_roi=None`
-5. **Expiration date as string vs date object** — handle both ISO string and `date` type
-6. **Very large ROI values** — no cap needed, but display layer may want to format as percentage
+**What changes:**
+- Review `backend/api/routers/options_chain.py` to confirm `annualized_roi` appears in JSON responses
+- If the response model explicitly excludes fields, update the response schema to include the new fields
+- Add a brief comment in the router referencing the new fields for future maintainers
+- No functional code change expected; if a schema update is required it is made here
+
+**Why isolated:** Keeping the API verification as its own commit makes it easy to see whether any router change was needed and provides a clear audit trail.
+
+**Files:**
+```
+backend/api/routers/options_chain.py   ← reviewed, modified only if schema exclusion found
+```
+
+**CI must pass:** all tests green, API schema generation succeeds.
+
+---
+
+## Push Strategy
+
+```
+Commit 1  →  push  →  open PR draft
+Commit 2  →  push  →  CI confirms calculator tests green
+Commit 3  →  push  →  CI confirms model change non-breaking
+Commit 4  →  push  →  CI confirms model tests green
+Commit 5  →  push  →  CI confirms agent wiring green
+Commit 6  →  push  →  CI confirms integration tests green
+Commit 7  →  push  →  mark PR ready for review
+```
+
+Each push triggers CI. If any push fails, only the delta since the last green push needs investigation. The PR is marked ready only after all seven commits are green end-to-end.
+
+---
+
+## Files Summary
+
+| File | Action | Commit |
+|---|---|---|
+| `backend/services/ccp_calculator.py` | Create | 1 |
+| `tests/services/test_ccp_calculator.py` | Create | 2 |
+| `backend/models/options_data.py` | Modify | 3 |
+| `tests/test_options_data_model.py` | Modify | 4 |
+| `backend/agents/options_data_agent.py` | Modify | 5 |
+| `backend/services/schwab_filters.py` | Review / minor comment | 5 |
+| `tests/agents/test_options_data_agent.py` | Modify | 6 |
+| `backend/api/routers/options_chain.py` | Review / modify if needed | 7 |
