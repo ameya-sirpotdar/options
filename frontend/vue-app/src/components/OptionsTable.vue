@@ -101,6 +101,7 @@
             <th scope="col" class="col-iv">IV</th>
             <th scope="col" class="col-volume">Volume</th>
             <th scope="col" class="col-oi">Open Int.</th>
+            <th scope="col" class="col-roi">Annualized ROI</th>
           </tr>
         </thead>
         <tbody>
@@ -127,6 +128,7 @@
             <td class="col-iv" data-label="IV">{{ formatPercent(row.iv) }}</td>
             <td class="col-volume" data-label="Volume">{{ formatInteger(row.volume) }}</td>
             <td class="col-oi" data-label="Open Int.">{{ formatInteger(row.open_interest) }}</td>
+            <td class="col-roi" data-label="Annualized ROI">{{ formatRoi(row.annualizedRoi) }}</td>
           </tr>
         </tbody>
       </table>
@@ -234,6 +236,13 @@ function formatInteger(value) {
   const num = Number(value)
   if (isNaN(num)) return '—'
   return new Intl.NumberFormat('en-US').format(Math.round(num))
+}
+
+function formatRoi(value) {
+  if (value === null || value === undefined) return '—'
+  const num = Number(value)
+  if (isNaN(num)) return '—'
+  return `${(num * 100).toFixed(2)}%`
 }
 
 function formatDate(value) {
