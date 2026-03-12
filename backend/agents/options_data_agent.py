@@ -1,4 +1,5 @@
 from backend.agents.state import PipelineState
+from backend.services.ccp_calculator import enrich_put_options_with_roi
 
 __all__ = ["OptionsDataAgent"]
 
@@ -35,7 +36,11 @@ class OptionsDataAgent:
             ``None``).
         """
         # TODO: implement options chain retrieval and populate options_data
-        state["options_data"] = None
+        options_data = state.get("options_data")
+
+        if options_data:
+            state["options_data"] = enrich_put_options_with_roi(options_data)
+
         return state
 
     def __call__(self, state: PipelineState) -> PipelineState:

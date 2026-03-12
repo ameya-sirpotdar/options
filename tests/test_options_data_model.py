@@ -277,6 +277,7 @@ class TestOptionsContractRecordSerialization:
             "bid", "ask", "last", "mark", "delta", "gamma", "theta",
             "vega", "rho", "openInterest", "totalVolume", "volatility",
             "inTheMoney", "PartitionKey", "RowKey", "timestamp",
+            "annualizedRoi",
         ]
         for field in expected_fields:
             assert field in data, f"Missing field: {field}"
@@ -297,6 +298,67 @@ class TestOptionsContractRecordSerialization:
         parsed = json.loads(json_str)
         assert parsed["symbol"] == "AAPL"
         assert parsed["PartitionKey"] == "AAPL"
+
+
+class TestOptionsContractRecordCCPFields:
+    def test_annualized_roi_defaults_to_none(self):
+        record = OptionsContractRecord(**_base_payload())
+        assert record.annualizedRoi is None
+
+    def test_annualized_roi_accepts_float(self):
+        record = OptionsContractRecord(**_base_payload(annualizedRoi=0.1523))
+        assert record.annualizedRoi == pytest.approx(0.1523)
+
+    def test_annualized_roi_accepts_zero(self):
+        record = OptionsContractRecord(**_base_payload(annualizedRoi=0.0))
+        assert record.annualizedRoi == 0.0
+
+    def test_annualized_roi_accepts_none_explicitly(self):
+        record = OptionsContractRecord(**_base_payload(annualizedRoi=None))
+        assert record.annualizedRoi is None
+
+    def test_annualized_roi_present_in_model_dump(self):
+        record = OptionsContractRecord(**_base_payload(annualizedRoi=0.25))
+        data = record.model_dump()
+        assert "annualizedRoi" in data
+        assert data["annualizedRoi"] == pytest.approx(0.25)
+
+    def test_annualized_roi_none_present_in_model_dump(self):
+        record = OptionsContractRecord(**_base_payload())
+        data = record.model_dump()
+        assert "annualizedRoi" in data
+        assert data["annualizedRoi"] is None
+
+    def test_annualized_roi_serialized_in_json(self):
+        import json
+        record = OptionsContractRecord(**_base_payload(annualizedRoi=0.42))
+        parsed = json.loads(record.model_dump_json())
+        assert "annualizedRoi" in parsed
+        assert parsed["annualizedRoi"] == pytest.approx(0.42)
+
+    def test_annualized_roi_invalid_type_raises(self):
+        with pytest.raises(ValidationError):
+            OptionsContractRecord(**_base_payload(annualizedRoi="high"))
+
+    def test_days_to_expiration_from_base_payload(self):
+        record = OptionsContractRecord(**_base_payload(daysToExpiration=30))
+        assert record.daysToExpiration == 30
+
+    def test_days_to_expiration_zero(self):
+        record = OptionsContractRecord(**_base_payload(daysToExpiration=0))
+        assert record.daysToExpiration == 0
+
+    def test_put_contract_with_roi(self):
+        payload = _base_payload(
+            contractType="PUT",
+            strikePrice=170.00,
+            bid=2.50,
+            daysToExpiration=45,
+            annualizedRoi=0.0753,
+        )
+        record = OptionsContractRecord(**payload)
+        assert record.contractType == "PUT"
+        assert record.annualizedRoi == pytest.approx(0.0753)
 
 
 class TestOptionsContractRecordEdgeCases:

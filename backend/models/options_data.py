@@ -156,6 +156,19 @@ class OptionsContractRecord(BaseModel):
         None, description="Current trading status of the contract."
     )
 
+    # -------------------------------------------------------------------------
+    # CCP (Cash Covered Put) calculated fields
+    # -------------------------------------------------------------------------
+    annualizedRoi: Optional[float] = Field(
+        None,
+        alias="annualizedRoi",
+        description=(
+            "Annualized return on investment for a cash-covered put strategy, "
+            "expressed as a decimal (e.g. 0.25 = 25%). "
+            "Populated only for PUT contracts with sufficient pricing data."
+        ),
+    )
+
     class Config:
         # Allow population by field name as well as alias so that raw Schwab
         # API dicts (which use camelCase) can be passed directly.
