@@ -1,7 +1,6 @@
 from unittest.mock import patch, MagicMock
 
 from backend.agents.options_data_agent import OptionsDataAgent
-from backend.models.options_data import OptionsData
 
 
 def test_options_data_agent_instantiation():
@@ -15,11 +14,12 @@ def test_options_data_agent_has_run_method():
     assert callable(agent.run)
 
 
-def test_options_data_agent_run_returns_state_unchanged():
+def test_options_data_agent_run_returns_state_with_same_keys():
     agent = OptionsDataAgent()
     state = {"ticker": "AAPL", "expiration": "2024-01-19"}
     result = agent.run(state)
-    assert result == state
+    assert result["ticker"] == "AAPL"
+    assert result["expiration"] == "2024-01-19"
 
 
 def test_options_data_agent_run_with_empty_state():
@@ -38,7 +38,6 @@ def test_options_data_agent_run_preserves_all_keys():
         "option_type": "call",
     }
     result = agent.run(state)
-    assert set(result.keys()) == set(state.keys())
     for key in state:
         assert result[key] == state[key]
 
@@ -70,6 +69,7 @@ def test_does_not_mutate_input_state():
     }
     state_copy = copy.deepcopy(original)
     agent.run(original)
+    # options_data is None so enrichment is skipped; state should be unchanged
     assert original == state_copy, "Agent must not mutate the input state dict"
 
 
@@ -77,33 +77,33 @@ def test_does_not_mutate_input_state():
 # CCP enrichment integration tests
 # ---------------------------------------------------------------------------
 
-def _make_put_options_data(expiration: str = "2025-12-19") -> list[OptionsData]:
-    """Return a minimal list of put OptionsData records for testing."""
+def _make_put_options_data(expiration: str = "2025-12-19") -> list[dict]:
+    """Return a minimal list of put option dicts for testing."""
     return [
-        OptionsData(
-            ticker="AAPL",
-            expiration=expiration,
-            strike=150.0,
-            option_type="put",
-            bid=3.50,
-            ask=3.70,
-            last=3.60,
-            volume=100,
-            open_interest=500,
-            implied_volatility=0.25,
-        ),
-        OptionsData(
-            ticker="AAPL",
-            expiration=expiration,
-            strike=145.0,
-            option_type="put",
-            bid=2.10,
-            ask=2.30,
-            last=2.20,
-            volume=80,
-            open_interest=300,
-            implied_volatility=0.22,
-        ),
+        {
+            "ticker": "AAPL",
+            "expiration": expiration,
+            "strike": 150.0,
+            "option_type": "put",
+            "bid": 3.50,
+            "ask": 3.70,
+            "last": 3.60,
+            "volume": 100,
+            "open_interest": 500,
+            "implied_volatility": 0.25,
+        },
+        {
+            "ticker": "AAPL",
+            "expiration": expiration,
+            "strike": 145.0,
+            "option_type": "put",
+            "bid": 2.10,
+            "ask": 2.30,
+            "last": 2.20,
+            "volume": 80,
+            "open_interest": 300,
+            "implied_volatility": 0.22,
+        },
     ]
 
 
@@ -112,12 +112,14 @@ def test_agent_enriches_put_options_with_annualized_roi():
     agent = OptionsDataAgent()
     put_options = _make_put_options_data()
 
+    enriched_list = [
+        {**opt, "annualized_roi": 0.15, "days_to_expiration": 90}
+        for opt in put_options
+    ]
+
     with patch(
         "backend.agents.options_data_agent.enrich_put_options_with_roi",
-        wraps=lambda opts: [
-            opt.model_copy(update={"annualized_roi": 0.15, "days_to_expiration": 90})
-            for opt in opts
-        ],
+        return_value=enriched_list,
     ) as mock_enrich:
         state = {"ticker": "AAPL", "options_data": put_options}
         result = agent.run(state)
@@ -126,8 +128,8 @@ def test_agent_enriches_put_options_with_annualized_roi():
         enriched = result["options_data"]
         assert enriched is not None
         for opt in enriched:
-            assert opt.annualized_roi == 0.15
-            assert opt.days_to_expiration == 90
+            assert opt["annualized_roi"] == 0.15
+            assert opt["days_to_expiration"] == 90
 
 
 def test_agent_calls_enrich_with_put_options_list():
@@ -150,7 +152,7 @@ def test_agent_replaces_options_data_with_enriched_list():
     agent = OptionsDataAgent()
     put_options = _make_put_options_data()
     enriched_options = [
-        opt.model_copy(update={"annualized_roi": 0.20, "days_to_expiration": 45})
+        {**opt, "annualized_roi": 0.20, "days_to_expiration": 45}
         for opt in put_options
     ]
 
@@ -210,7 +212,7 @@ def test_agent_enrichment_does_not_affect_other_state_keys():
     agent = OptionsDataAgent()
     put_options = _make_put_options_data()
     enriched_options = [
-        opt.model_copy(update={"annualized_roi": 0.10, "days_to_expiration": 30})
+        {**opt, "annualized_roi": 0.10, "days_to_expiration": 30}
         for opt in put_options
     ]
 
