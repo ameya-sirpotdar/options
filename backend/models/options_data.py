@@ -156,6 +156,26 @@ class OptionsContractRecord(BaseModel):
         None, description="Current trading status of the contract."
     )
 
+    # -------------------------------------------------------------------------
+    # CCP (Cash Covered Put) calculated fields
+    # -------------------------------------------------------------------------
+    annualized_roi: Optional[float] = Field(
+        None,
+        description=(
+            "Annualized return on investment for a cash-covered put strategy, "
+            "expressed as a decimal (e.g. 0.25 = 25%). "
+            "Populated only for PUT contracts with sufficient pricing data."
+        ),
+    )
+    days_to_expiration: Optional[int] = Field(
+        None,
+        description=(
+            "Calendar days from the ingestion timestamp until the contract's "
+            "expiration date. Computed at enrichment time and stored alongside "
+            "the raw API daysToExpiration field for auditability."
+        ),
+    )
+
     class Config:
         # Allow population by field name as well as alias so that raw Schwab
         # API dicts (which use camelCase) can be passed directly.
