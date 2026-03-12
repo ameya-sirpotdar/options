@@ -1,5 +1,3 @@
-tests/services/test_ccp_calculator.py
-
 from datetime import date, timedelta
 import pytest
 from backend.services.ccp_calculator import (
