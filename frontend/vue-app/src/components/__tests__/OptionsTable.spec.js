@@ -2,6 +2,11 @@ import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import OptionsTable from '../OptionsTable.vue'
 
+// Helper to find a component instance for method testing
+function mountOptionsTable(props) {
+  return mount(OptionsTable, { props })
+}
+
 // TODO: Fix failing tests — they pass data via an `options` prop but the
 // component expects `rows`. Also, the component formats values (currency,
 // percent, dates) so raw value assertions won't match.
@@ -20,6 +25,7 @@ describe('OptionsTable', () => {
       iv: 0.18,
       volume: 1500,
       openInterest: 25000,
+      annualizedRoi: 0.1234,
     },
     {
       symbol: 'SPY',
@@ -33,6 +39,7 @@ describe('OptionsTable', () => {
       iv: 0.20,
       volume: 800,
       openInterest: 12000,
+      annualizedRoi: -0.0567,
     },
   ]
 
@@ -100,5 +107,116 @@ describe('OptionsTable', () => {
       props: { options: sampleOptions, loading: true, vix: null },
     })
     expect(wrapper.text()).toContain('Loading')
+  })
+
+  describe('Annualized ROI column', () => {
+    it('renders the Annualized ROI column header', () => {
+      const wrapper = mountOptionsTable({
+        options: sampleOptions,
+        loading: false,
+        vix: null,
+      })
+      expect(wrapper.text()).toContain('Annualized ROI')
+    })
+
+    it('displays formatted annualizedRoi as a percentage string', () => {
+      const wrapper = mountOptionsTable({
+        options: sampleOptions,
+        loading: false,
+        vix: null,
+      })
+      // 0.1234 => '12.34%'
+      expect(wrapper.text()).toContain('12.34%')
+    })
+
+    it('displays negative annualizedRoi as a negative percentage string', () => {
+      const wrapper = mountOptionsTable({
+        options: sampleOptions,
+        loading: false,
+        vix: null,
+      })
+      // -0.0567 => '-5.67%'
+      expect(wrapper.text()).toContain('-5.67%')
+    })
+
+    it('displays zero annualizedRoi as 0.00%', () => {
+      const wrapper = mountOptionsTable({
+        options: [
+          {
+            ...sampleOptions[0],
+            annualizedRoi: 0,
+          },
+        ],
+        loading: false,
+        vix: null,
+      })
+      expect(wrapper.text()).toContain('0.00%')
+    })
+
+    it('displays fallback dash when annualizedRoi is null', () => {
+      const wrapper = mountOptionsTable({
+        options: [
+          {
+            ...sampleOptions[0],
+            annualizedRoi: null,
+          },
+        ],
+        loading: false,
+        vix: null,
+      })
+      expect(wrapper.text()).toContain('—')
+    })
+
+    it('displays fallback dash when annualizedRoi is undefined', () => {
+      const wrapper = mountOptionsTable({
+        options: [
+          {
+            ...sampleOptions[0],
+            annualizedRoi: undefined,
+          },
+        ],
+        loading: false,
+        vix: null,
+      })
+      expect(wrapper.text()).toContain('—')
+    })
+
+    it('formatRoi returns formatted percentage for a valid decimal', () => {
+      const wrapper = mountOptionsTable({
+        options: [],
+        loading: false,
+        vix: null,
+      })
+      expect(wrapper.vm.formatRoi(0.5)).toBe('50.00%')
+      expect(wrapper.vm.formatRoi(0.1234)).toBe('12.34%')
+      expect(wrapper.vm.formatRoi(-0.0567)).toBe('-5.67%')
+    })
+
+    it('formatRoi returns fallback dash for null', () => {
+      const wrapper = mountOptionsTable({
+        options: [],
+        loading: false,
+        vix: null,
+      })
+      expect(wrapper.vm.formatRoi(null)).toBe('—')
+    })
+
+    it('formatRoi returns fallback dash for undefined', () => {
+      const wrapper = mountOptionsTable({
+        options: [],
+        loading: false,
+        vix: null,
+      })
+      expect(wrapper.vm.formatRoi(undefined)).toBe('—')
+    })
+
+    it('formatRoi returns 0.00% for zero', () => {
+      const wrapper = mountOptionsTable({
+        options: [],
+        loading: false,
+        vix: null,
+      })
+      expect(wrapper.vm.formatRoi(0)).toBe('0.00%')
+    })
   })
 })
