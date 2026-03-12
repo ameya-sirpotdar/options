@@ -259,13 +259,11 @@ test.describe('Poll Market Data Flow', () => {
     const pollButton = page.locator('[data-testid="poll-button"]');
     await pollButton.click();
 
-    await page.waitForTimeout(2000);
+    await page.waitForResponse('**/api/**');
 
     const optionsTable = page.locator('[data-testid="options-table"]');
-    if (await optionsTable.count() > 0) {
-      await expect(optionsTable).toBeVisible();
-      await expect(optionsTable.getByText('Annualized ROI')).toBeVisible();
-    }
+    await expect(optionsTable).toBeVisible({ timeout: 5000 });
+    await expect(optionsTable.getByText('Annualized ROI')).toBeVisible();
   });
 
   test('should handle multiple ticker symbols', async ({ page }) => {
