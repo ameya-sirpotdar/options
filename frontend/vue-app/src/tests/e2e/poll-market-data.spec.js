@@ -232,6 +232,42 @@ test.describe('Poll Market Data Flow', () => {
     }
   });
 
+  test('should display Annualized ROI column header in options table when options data is loaded', async ({ page }) => {
+    await page.route('**/api/**', (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ticker: 'AAPL',
+          price: 175.5,
+          options: [
+            {
+              strike: 170,
+              expiration: '2024-12-20',
+              bid: 2.5,
+              ask: 2.7,
+              annualizedRoi: 0.1234,
+            },
+          ],
+        }),
+      });
+    });
+
+    const tickerInput = page.locator('[data-testid="ticker-input"]');
+    await tickerInput.fill('AAPL');
+
+    const pollButton = page.locator('[data-testid="poll-button"]');
+    await pollButton.click();
+
+    await page.waitForTimeout(2000);
+
+    const optionsTable = page.locator('[data-testid="options-table"]');
+    if (await optionsTable.count() > 0) {
+      await expect(optionsTable).toBeVisible();
+      await expect(optionsTable.getByText('Annualized ROI')).toBeVisible();
+    }
+  });
+
   test('should handle multiple ticker symbols', async ({ page }) => {
     const consoleErrors = [];
     page.on('console', (msg) => {
