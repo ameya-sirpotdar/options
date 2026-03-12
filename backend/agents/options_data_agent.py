@@ -36,12 +36,11 @@ class OptionsDataAgent:
             ``None``).
         """
         # TODO: implement options chain retrieval and populate options_data
-        options_data = None
+        options_data = state.get("options_data")
 
-        if options_data is not None and hasattr(options_data, "puts") and options_data.puts:
-            options_data.puts = enrich_put_options_with_roi(options_data.puts)
+        if options_data:
+            state["options_data"] = enrich_put_options_with_roi(options_data)
 
-        state["options_data"] = options_data
         return state
 
     def __call__(self, state: PipelineState) -> PipelineState:
