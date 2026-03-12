@@ -11,11 +11,14 @@
         :expiry="expiry"
         :vix="vix"
         :tickers="tickers"
+        :optionType="optionType"
         :isPolling="polling"
         :isCalculating="calculating"
+        :hasOptions="hasOptions"
         @update:delta="delta = $event"
         @update:expiry="expiry = $event"
         @update:tickers="tickers = $event"
+        @update:optionType="optionType = $event"
         @poll="handlePoll"
         @calculate="handleCalculate"
       />
@@ -33,7 +36,9 @@
       </section>
 
       <OptionsTable
-        :rows="options"
+        :rows="filteredOptions"
+        :straddleRows="straddleRows"
+        :optionType="optionType"
         :loading="polling"
       />
 
@@ -61,7 +66,11 @@ const {
   expiry,
   vix,
   tickers,
+  optionType,
   options,
+  filteredOptions,
+  straddleRows,
+  hasOptions,
   bestTrade,
   isPolling: polling,
   isCalculating: calculating,
@@ -126,7 +135,7 @@ async function handleCalculate() {
   flex-direction: column;
   gap: 1.5rem;
   padding: 2rem;
-  max-width: 960px;
+  max-width: 1400px;
   width: 100%;
   margin: 0 auto;
   box-sizing: border-box;

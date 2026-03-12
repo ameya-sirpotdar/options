@@ -5,6 +5,7 @@ export function useMarketData() {
   const delta = ref(0.30)
   const expiry = ref('')
   const tickers = ref('')
+  const optionType = ref('all')
   const vix = ref(null)
   const options = ref([])
   const bestTrade = ref(null)
@@ -14,6 +15,24 @@ export function useMarketData() {
   const calcError = ref(null)
 
   const hasOptions = computed(() => options.value.length > 0)
+
+  const filteredOptions = computed(() => {
+    if (optionType.value === 'all' || optionType.value === 'straddle') return options.value
+    return options.value.filter(r => r.type && r.type.toLowerCase() === optionType.value)
+  })
+
+  const straddleRows = computed(() => {
+    // Group by ticker+expiry+strike and pair calls with puts
+    const map = new Map()
+    for (const row of options.value) {
+      const key = `${row.ticker}|${row.expiry}|${row.strike}`
+      if (!map.has(key)) map.set(key, { ticker: row.ticker, expiry: row.expiry, strike: row.strike, call: null, put: null })
+      const t = row.type ? row.type.toLowerCase() : ''
+      if (t === 'call') map.get(key).call = row
+      else if (t === 'put') map.get(key).put = row
+    }
+    return Array.from(map.values())
+  })
   const hasBestTrade = computed(() => bestTrade.value !== null)
   const canPoll = computed(
     () => expiry.value !== '' && tickers.value.length > 0 && !isPolling.value
@@ -84,6 +103,7 @@ export function useMarketData() {
     delta.value = 0.30
     expiry.value = ''
     tickers.value = ''
+    optionType.value = 'all'
     vix.value = null
     options.value = []
     bestTrade.value = null
@@ -97,8 +117,11 @@ export function useMarketData() {
     delta,
     expiry,
     tickers,
+    optionType,
     vix,
     options,
+    filteredOptions,
+    straddleRows,
     bestTrade,
     isPolling,
     isCalculating,

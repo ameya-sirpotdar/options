@@ -16,6 +16,73 @@
       No options data yet. Adjust parameters and click <strong>Poll Market Data</strong>.
     </div>
 
+    <!-- Straddle view -->
+    <div v-else-if="optionType === 'straddle'" class="table-wrapper" role="region" aria-label="Straddle view">
+      <table class="options-table straddle-table" aria-describedby="straddle-caption">
+        <caption id="straddle-caption" class="visually-hidden">
+          Straddle view: {{ straddleRows.length }} strike pairs
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" class="col-text straddle-call-header" colspan="4">CALLS</th>
+            <th scope="col" class="col-center straddle-center-header" colspan="3">STRIKE</th>
+            <th scope="col" class="col-text straddle-put-header" colspan="4">PUTS</th>
+          </tr>
+          <tr>
+            <!-- Call cols -->
+            <th scope="col" class="col-right">Bid</th>
+            <th scope="col" class="col-right">Ask</th>
+            <th scope="col" class="col-right">Delta</th>
+            <th scope="col" class="col-right">IV</th>
+            <!-- Center cols -->
+            <th scope="col" class="col-text">Ticker</th>
+            <th scope="col" class="col-text">Expiry</th>
+            <th scope="col" class="col-center">Strike</th>
+            <!-- Put cols -->
+            <th scope="col" class="col-right">Bid</th>
+            <th scope="col" class="col-right">Ask</th>
+            <th scope="col" class="col-right">Delta</th>
+            <th scope="col" class="col-right">IV</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(pair, index) in straddleRows" :key="`straddle-${index}`">
+            <!-- Call side -->
+            <td class="col-right">{{ formatCurrency(pair.call?.bid) }}</td>
+            <td class="col-right">{{ formatCurrency(pair.call?.ask) }}</td>
+            <td class="col-right">
+              <span v-if="pair.call" :class="deltaClass(pair.call.delta)">
+                {{ formatDecimal(pair.call.delta, 3) }}
+              </span>
+              <span v-else>—</span>
+            </td>
+            <td class="col-right">{{ formatPercent(pair.call?.iv) }}</td>
+            <!-- Center -->
+            <td class="col-text">{{ pair.ticker || '—' }}</td>
+            <td class="col-text">{{ formatDate(pair.expiry) }}</td>
+            <td class="col-center strike-cell">{{ formatCurrency(pair.strike) }}</td>
+            <!-- Put side -->
+            <td class="col-right">{{ formatCurrency(pair.put?.bid) }}</td>
+            <td class="col-right">{{ formatCurrency(pair.put?.ask) }}</td>
+            <td class="col-right">
+              <span v-if="pair.put" :class="deltaClass(pair.put.delta)">
+                {{ formatDecimal(pair.put.delta, 3) }}
+              </span>
+              <span v-else>—</span>
+            </td>
+            <td class="col-right">{{ formatPercent(pair.put?.iv) }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="table-footer">
+        <span class="row-count">{{ straddleRows.length }} strike pair{{ straddleRows.length !== 1 ? 's' : '' }}</span>
+        <span v-if="vix !== null && vix !== undefined" class="vix-badge" aria-label="Current VIX value">
+          VIX: <strong>{{ formatDecimal(vix, 2) }}</strong>
+        </span>
+      </div>
+    </div>
+
+    <!-- Standard view -->
     <div v-else class="table-wrapper" role="region" aria-label="Options data table">
       <table class="options-table" aria-describedby="table-caption">
         <caption id="table-caption" class="visually-hidden">
@@ -43,43 +110,23 @@
             :class="rowClass(row)"
             :aria-label="`${row.type || 'Option'} contract: strike ${row.strike}, expiry ${row.expiry}`"
           >
-            <td class="col-ticker" data-label="Ticker">
-              {{ row.ticker || '—' }}
-            </td>
-            <td class="col-expiry" data-label="Expiry">
-              {{ formatDate(row.expiry) }}
-            </td>
-            <td class="col-strike" data-label="Strike">
-              {{ formatCurrency(row.strike) }}
-            </td>
+            <td class="col-ticker" data-label="Ticker">{{ row.ticker || '—' }}</td>
+            <td class="col-expiry" data-label="Expiry">{{ formatDate(row.expiry) }}</td>
+            <td class="col-strike" data-label="Strike">{{ formatCurrency(row.strike) }}</td>
             <td class="col-type" data-label="Type">
               <span :class="['badge', typeBadgeClass(row.type)]">
                 {{ row.type ? row.type.toUpperCase() : '—' }}
               </span>
             </td>
-            <td class="col-bid" data-label="Bid">
-              {{ formatCurrency(row.bid) }}
-            </td>
-            <td class="col-ask" data-label="Ask">
-              {{ formatCurrency(row.ask) }}
-            </td>
-            <td class="col-mid" data-label="Mid">
-              <strong>{{ formatCurrency(row.mid) }}</strong>
-            </td>
+            <td class="col-bid" data-label="Bid">{{ formatCurrency(row.bid) }}</td>
+            <td class="col-ask" data-label="Ask">{{ formatCurrency(row.ask) }}</td>
+            <td class="col-mid" data-label="Mid"><strong>{{ formatCurrency(row.mid) }}</strong></td>
             <td class="col-delta" data-label="Delta">
-              <span :class="deltaClass(row.delta)">
-                {{ formatDecimal(row.delta, 3) }}
-              </span>
+              <span :class="deltaClass(row.delta)">{{ formatDecimal(row.delta, 3) }}</span>
             </td>
-            <td class="col-iv" data-label="IV">
-              {{ formatPercent(row.iv) }}
-            </td>
-            <td class="col-volume" data-label="Volume">
-              {{ formatInteger(row.volume) }}
-            </td>
-            <td class="col-oi" data-label="Open Int.">
-              {{ formatInteger(row.open_interest) }}
-            </td>
+            <td class="col-iv" data-label="IV">{{ formatPercent(row.iv) }}</td>
+            <td class="col-volume" data-label="Volume">{{ formatInteger(row.volume) }}</td>
+            <td class="col-oi" data-label="Open Int.">{{ formatInteger(row.open_interest) }}</td>
           </tr>
         </tbody>
       </table>
@@ -95,12 +142,18 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
-
 const props = defineProps({
   rows: {
     type: Array,
     default: () => [],
+  },
+  straddleRows: {
+    type: Array,
+    default: () => [],
+  },
+  optionType: {
+    type: String,
+    default: 'all',
   },
   loading: {
     type: Boolean,
@@ -211,7 +264,7 @@ function formatDate(value) {
 .section-title {
   font-size: 1.125rem;
   font-weight: 600;
-  color: var(--color-heading, #1e293b);
+  color: var(--color-text-primary);
   margin: 0;
 }
 
@@ -221,21 +274,21 @@ function formatDate(value) {
   align-items: center;
   gap: 0.5rem;
   padding: 1.25rem 1rem;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-md);
   font-size: 0.9rem;
-  color: var(--color-text-muted, #64748b);
-  background: var(--color-surface-alt, #f8fafc);
-  border: 1px solid var(--color-border, #e2e8f0);
+  color: var(--color-text-muted);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
 }
 
 .state-message.loading {
-  color: var(--color-primary, #3b82f6);
+  color: var(--color-primary);
 }
 
 .state-message.error {
-  color: var(--color-error, #dc2626);
-  background: #fef2f2;
-  border-color: #fecaca;
+  color: var(--color-danger);
+  background: var(--color-danger-muted);
+  border-color: rgba(224, 92, 92, 0.3);
 }
 
 .state-message.empty {
@@ -262,9 +315,9 @@ function formatDate(value) {
 /* ── Table wrapper ───────────────────────────────────────────────────────── */
 .table-wrapper {
   overflow-x: auto;
-  border-radius: 0.5rem;
-  border: 1px solid var(--color-border, #e2e8f0);
-  background: var(--color-surface, #ffffff);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 /* ── Table base ──────────────────────────────────────────────────────────── */
@@ -276,7 +329,7 @@ function formatDate(value) {
 }
 
 .options-table thead {
-  background: var(--color-surface-alt, #f8fafc);
+  background: var(--color-surface-raised);
   position: sticky;
   top: 0;
   z-index: 1;
@@ -289,8 +342,8 @@ function formatDate(value) {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--color-text-muted, #64748b);
-  border-bottom: 2px solid var(--color-border, #e2e8f0);
+  color: var(--color-text-muted);
+  border-bottom: 2px solid var(--color-border);
 }
 
 .options-table th.col-ticker,
@@ -302,8 +355,8 @@ function formatDate(value) {
 .options-table td {
   padding: 0.5rem 0.875rem;
   text-align: right;
-  color: var(--color-text, #334155);
-  border-bottom: 1px solid var(--color-border-light, #f1f5f9);
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .options-table td.col-ticker,
@@ -317,16 +370,16 @@ function formatDate(value) {
 }
 
 .options-table tbody tr:hover {
-  background: var(--color-surface-hover, #f0f9ff);
+  background: var(--color-surface-raised);
 }
 
 /* ── Row type tints ──────────────────────────────────────────────────────── */
 .row-call {
-  background: rgba(34, 197, 94, 0.03);
+  background: rgba(62, 207, 142, 0.08);
 }
 
 .row-put {
-  background: rgba(239, 68, 68, 0.03);
+  background: rgba(224, 92, 92, 0.08);
 }
 
 /* ── Type badge ──────────────────────────────────────────────────────────── */
@@ -340,27 +393,45 @@ function formatDate(value) {
 }
 
 .badge-call {
-  background: #dcfce7;
-  color: #15803d;
+  background: var(--color-success-muted);
+  color: var(--color-success);
 }
 
 .badge-put {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: var(--color-danger-muted);
+  color: var(--color-danger);
 }
 
 /* ── Delta colouring ─────────────────────────────────────────────────────── */
 .delta-high {
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   font-weight: 600;
 }
 
 .delta-mid {
-  color: var(--color-text, #334155);
+  color: var(--color-text-primary);
 }
 
 .delta-low {
-  color: var(--color-text-muted, #94a3b8);
+  color: var(--color-text-muted);
+}
+
+/* ── Straddle table ──────────────────────────────────────────────────────── */
+.straddle-table th.col-text { text-align: left; }
+.straddle-table th.col-right { text-align: right; }
+.straddle-table th.col-center { text-align: center; }
+.straddle-table td.col-text { text-align: left; }
+.straddle-table td.col-right { text-align: right; }
+.straddle-table td.col-center { text-align: center; }
+
+.straddle-call-header { color: var(--color-success) !important; }
+.straddle-put-header  { color: var(--color-danger)  !important; }
+.straddle-center-header { color: var(--color-text-secondary) !important; }
+
+.strike-cell {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Table footer ────────────────────────────────────────────────────────── */
@@ -369,15 +440,15 @@ function formatDate(value) {
   align-items: center;
   justify-content: space-between;
   padding: 0.5rem 0.875rem;
-  background: var(--color-surface-alt, #f8fafc);
-  border-top: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface-raised);
+  border-top: 1px solid var(--color-border);
   font-size: 0.8rem;
-  color: var(--color-text-muted, #64748b);
+  color: var(--color-text-muted);
 }
 
 .vix-badge {
-  background: var(--color-primary-light, #dbeafe);
-  color: var(--color-primary-dark, #1d4ed8);
+  background: var(--color-primary-muted);
+  color: var(--color-primary);
   padding: 0.2rem 0.6rem;
   border-radius: 9999px;
   font-size: 0.78rem;
@@ -417,8 +488,8 @@ function formatDate(value) {
 
   .options-table tbody tr {
     margin-bottom: 0.75rem;
-    border: 1px solid var(--color-border, #e2e8f0);
-    border-radius: 0.375rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
     overflow: hidden;
   }
 
@@ -428,14 +499,14 @@ function formatDate(value) {
     align-items: center;
     text-align: right;
     padding: 0.4rem 0.75rem;
-    border-bottom: 1px solid var(--color-border-light, #f1f5f9);
+    border-bottom: 1px solid var(--color-border);
   }
 
   .options-table td::before {
     content: attr(data-label);
     font-weight: 600;
     font-size: 0.75rem;
-    color: var(--color-text-muted, #64748b);
+    color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     flex-shrink: 0;
