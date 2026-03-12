@@ -8,15 +8,6 @@ const apiClient = axios.create({
   },
 })
 
-export function fetchOptionsChain(tickerArray) {
-  return apiClient.get('/options-chain', {
-    params: { tickers: tickerArray },
-    paramsSerializer: (params) => {
-      return params.tickers.map((t) => `tickers=${encodeURIComponent(t)}`).join('&')
-    },
-  })
-}
-
 apiClient.interceptors.request.use(
   (config) => {
     return config
