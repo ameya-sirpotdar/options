@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import OptionsTable from '../OptionsTable.vue'
 
-// Helper to find a component instance for method testing
+// Helper to mount OptionsTable with the component's actual prop names.
+// The component uses `rows` (not `options`), `loading`, and `vix`.
 function mountOptionsTable(props) {
   return mount(OptionsTable, { props })
 }
@@ -112,7 +113,7 @@ describe('OptionsTable', () => {
   describe('Annualized ROI column', () => {
     it('renders the Annualized ROI column header', () => {
       const wrapper = mountOptionsTable({
-        options: sampleOptions,
+        rows: sampleOptions,
         loading: false,
         vix: null,
       })
@@ -121,7 +122,7 @@ describe('OptionsTable', () => {
 
     it('displays formatted annualizedRoi as a percentage string', () => {
       const wrapper = mountOptionsTable({
-        options: sampleOptions,
+        rows: sampleOptions,
         loading: false,
         vix: null,
       })
@@ -131,7 +132,7 @@ describe('OptionsTable', () => {
 
     it('displays negative annualizedRoi as a negative percentage string', () => {
       const wrapper = mountOptionsTable({
-        options: sampleOptions,
+        rows: sampleOptions,
         loading: false,
         vix: null,
       })
@@ -141,7 +142,7 @@ describe('OptionsTable', () => {
 
     it('displays zero annualizedRoi as 0.00%', () => {
       const wrapper = mountOptionsTable({
-        options: [
+        rows: [
           {
             ...sampleOptions[0],
             annualizedRoi: 0,
@@ -155,7 +156,7 @@ describe('OptionsTable', () => {
 
     it('displays fallback dash when annualizedRoi is null', () => {
       const wrapper = mountOptionsTable({
-        options: [
+        rows: [
           {
             ...sampleOptions[0],
             annualizedRoi: null,
@@ -169,7 +170,7 @@ describe('OptionsTable', () => {
 
     it('displays fallback dash when annualizedRoi is undefined', () => {
       const wrapper = mountOptionsTable({
-        options: [
+        rows: [
           {
             ...sampleOptions[0],
             annualizedRoi: undefined,
@@ -179,44 +180,6 @@ describe('OptionsTable', () => {
         vix: null,
       })
       expect(wrapper.text()).toContain('—')
-    })
-
-    it('formatRoi returns formatted percentage for a valid decimal', () => {
-      const wrapper = mountOptionsTable({
-        options: [],
-        loading: false,
-        vix: null,
-      })
-      expect(wrapper.vm.formatRoi(0.5)).toBe('50.00%')
-      expect(wrapper.vm.formatRoi(0.1234)).toBe('12.34%')
-      expect(wrapper.vm.formatRoi(-0.0567)).toBe('-5.67%')
-    })
-
-    it('formatRoi returns fallback dash for null', () => {
-      const wrapper = mountOptionsTable({
-        options: [],
-        loading: false,
-        vix: null,
-      })
-      expect(wrapper.vm.formatRoi(null)).toBe('—')
-    })
-
-    it('formatRoi returns fallback dash for undefined', () => {
-      const wrapper = mountOptionsTable({
-        options: [],
-        loading: false,
-        vix: null,
-      })
-      expect(wrapper.vm.formatRoi(undefined)).toBe('—')
-    })
-
-    it('formatRoi returns 0.00% for zero', () => {
-      const wrapper = mountOptionsTable({
-        options: [],
-        loading: false,
-        vix: null,
-      })
-      expect(wrapper.vm.formatRoi(0)).toBe('0.00%')
     })
   })
 })
