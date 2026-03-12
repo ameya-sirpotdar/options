@@ -43,6 +43,7 @@
             <th scope="col" class="col-right">Ask</th>
             <th scope="col" class="col-right">Delta</th>
             <th scope="col" class="col-right">IV</th>
+            <!-- annualizedRoi not shown in straddle view; only applicable to individual put contracts -->
           </tr>
         </thead>
         <tbody>
@@ -224,11 +225,11 @@ function formatDecimal(value, digits = 2) {
   return num.toFixed(digits)
 }
 
-function formatPercent(value) {
+function formatPercent(value, digits = 1) {
   if (value === null || value === undefined || value === '') return '—'
   const num = Number(value)
   if (isNaN(num)) return '—'
-  return `${(num * 100).toFixed(1)}%`
+  return `${(num * 100).toFixed(digits)}%`
 }
 
 function formatInteger(value) {
@@ -239,10 +240,7 @@ function formatInteger(value) {
 }
 
 function formatRoi(value) {
-  if (value === null || value === undefined) return '—'
-  const num = Number(value)
-  if (isNaN(num)) return '—'
-  return `${(num * 100).toFixed(2)}%`
+  return formatPercent(value, 2)
 }
 
 function formatDate(value) {
