@@ -1,5 +1,5 @@
 from backend.agents.state import PipelineState
-from backend.services.ccp_calculator import enrich_put_options_with_roi
+from backend.services.trades_comparison_service import TradesComparisonService
 
 __all__ = ["OptionsDataAgent"]
 
@@ -16,6 +16,9 @@ class OptionsDataAgent:
 
     Current status: placeholder stub — `run` returns the state unchanged.
     """
+
+    def __init__(self):
+        self._service = TradesComparisonService()
 
     def run(self, state: PipelineState) -> PipelineState:
         """Execute the options data retrieval step.
@@ -39,7 +42,7 @@ class OptionsDataAgent:
         options_data = state.get("options_data")
 
         if options_data:
-            state["options_data"] = enrich_put_options_with_roi(options_data)
+            state["options_data"] = self._service.enrich_put_options_with_roi(options_data)
 
         return state
 
