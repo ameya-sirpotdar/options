@@ -1,18 +1,20 @@
+from typing import List
+
 from fastapi import APIRouter, HTTPException, Request
 
-from backend.models.options_data import BestTradeResponse, TradabilityScore
-from backend.services.tradability_service import rank_candidates
+from backend.models.tradability_score import TradabilityScore
+from backend.services.trades_comparison_service import TradesComparisonService
 
 router = APIRouter(prefix="/trades", tags=["trades"])
 
 
-@router.get("/best", response_model=BestTradeResponse)
-def get_best_trade(request: Request):
+@router.get("", response_model=List[TradabilityScore])
+def get_trades(request: Request):
     """
-    Return the single best trade candidate ranked by the tradability index.
+    Return a flat list of all trade candidates ranked by tradability score.
 
-    Fetches stored options rows from Azure Table Storage, scores each one,
-    and returns the top-ranked candidate along with all ranked candidates.
+    Fetches stored options contracts from Azure Table Storage, scores each one
+    using TradesComparisonService, and returns the full ranked list.
     """
     svc = getattr(request.app.state, "azure_table_service", None)
     if svc is None:
@@ -28,30 +30,16 @@ def get_best_trade(request: Request):
             detail="No options data found in storage.",
         )
 
-    # rank_candidates returns dicts augmented with 'metrics' and 'tradability_score'
-    ranked_dicts = rank_candidates([r if isinstance(r, dict) else r.model_dump() for r in raw_rows])
+    comparison_service = TradesComparisonService()
+    contracts = [
+        r if isinstance(r, dict) else r.model_dump() for r in raw_rows
+    ]
+    ranked_scores: List[TradabilityScore] = comparison_service.rank_candidates(contracts)
 
-    if not ranked_dicts:
+    if not ranked_scores:
         raise HTTPException(
             status_code=404,
             detail="No valid trade candidates could be ranked.",
         )
 
-    def to_score(row: dict) -> TradabilityScore:
-        m = row.get("metrics", {})
-        return TradabilityScore(
-            symbol=row.get("symbol", row.get("RowKey", "")),
-            underlying_symbol=row.get("underlyingSymbol", row.get("PartitionKey", "")),
-            score=row["tradability_score"],
-            delta=m.get("delta"),
-            theta=m.get("theta"),
-            iv=m.get("iv"),
-            premium=m.get("premium"),
-        )
-
-    ranked_scores = [to_score(r) for r in ranked_dicts]
-
-    return BestTradeResponse(
-        best_candidate=ranked_scores[0],
-        ranked_candidates=ranked_scores,
-    )
+    return ranked_scores
