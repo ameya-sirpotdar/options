@@ -1,6 +1,3 @@
-tests/models/test_model_imports.py
-
-```python
 """
 Tests for model imports and structure validation.
 Ensures all models are importable and have the expected fields/structure.
@@ -492,4 +489,3 @@ class TestModelSerialization:
         assert isinstance(data, dict)
         assert len(data["contracts"]) == 1
         assert data["contracts"][0]["symbol"] == "AAPL"
-```
