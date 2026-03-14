@@ -6,11 +6,11 @@ from fastapi import FastAPI
 from backend.api.routers.options_chain import router
 
 
-def make_app(mock_schwab_client=None):
+def make_app(mock_schwab_service=None):
     app = FastAPI()
     app.include_router(router)
-    if mock_schwab_client is not None:
-        app.state.schwab_client = mock_schwab_client
+    if mock_schwab_service is not None:
+        app.state.schwab_service = mock_schwab_service
     return app
 
 
@@ -94,9 +94,9 @@ CHAIN_HIGH_DELTA = {
 
 class TestGetOptionsChainEndpoint:
     def test_returns_200_with_rows_and_vix(self):
-        mock_client = MagicMock()
-        mock_client.get_option_chain = AsyncMock(return_value=SAMPLE_CHAIN)
-        client = TestClient(make_app(mock_client))
+        mock_service = MagicMock()
+        mock_service.get_option_chain = AsyncMock(return_value=SAMPLE_CHAIN)
+        client = TestClient(make_app(mock_service))
 
         response = client.get("/options-chain?tickers=QQQ")
 
@@ -107,9 +107,9 @@ class TestGetOptionsChainEndpoint:
         assert data["vix"] is None
 
     def test_row_field_names_normalized(self):
-        mock_client = MagicMock()
-        mock_client.get_option_chain = AsyncMock(return_value=SAMPLE_CHAIN)
-        client = TestClient(make_app(mock_client))
+        mock_service = MagicMock()
+        mock_service.get_option_chain = AsyncMock(return_value=SAMPLE_CHAIN)
+        client = TestClient(make_app(mock_service))
 
         response = client.get("/options-chain?tickers=QQQ")
         rows = response.json()["rows"]
@@ -129,18 +129,18 @@ class TestGetOptionsChainEndpoint:
         assert "openInterest" not in row
 
     def test_mid_computed_correctly(self):
-        mock_client = MagicMock()
-        mock_client.get_option_chain = AsyncMock(return_value=SAMPLE_CHAIN)
-        client = TestClient(make_app(mock_client))
+        mock_service = MagicMock()
+        mock_service.get_option_chain = AsyncMock(return_value=SAMPLE_CHAIN)
+        client = TestClient(make_app(mock_service))
 
         response = client.get("/options-chain?tickers=QQQ")
         call_row = next(r for r in response.json()["rows"] if r["type"] == "call")
         assert call_row["mid"] == round((3.00 + 3.10) / 2, 4)
 
     def test_type_field_is_lowercased(self):
-        mock_client = MagicMock()
-        mock_client.get_option_chain = AsyncMock(return_value=SAMPLE_CHAIN)
-        client = TestClient(make_app(mock_client))
+        mock_service = MagicMock()
+        mock_service.get_option_chain = AsyncMock(return_value=SAMPLE_CHAIN)
+        client = TestClient(make_app(mock_service))
 
         response = client.get("/options-chain?tickers=QQQ")
         types = {r["type"] for r in response.json()["rows"]}
@@ -150,30 +150,30 @@ class TestGetOptionsChainEndpoint:
         assert "PUT" not in types
 
     def test_delta_filter_excludes_out_of_range(self):
-        mock_client = MagicMock()
-        mock_client.get_option_chain = AsyncMock(return_value=CHAIN_HIGH_DELTA)
-        client = TestClient(make_app(mock_client))
+        mock_service = MagicMock()
+        mock_service.get_option_chain = AsyncMock(return_value=CHAIN_HIGH_DELTA)
+        client = TestClient(make_app(mock_service))
 
         response = client.get("/options-chain?tickers=QQQ&delta=0.30")
         assert response.status_code == 200
         assert response.json()["rows"] == []
 
     def test_delta_filter_includes_in_range(self):
-        mock_client = MagicMock()
-        mock_client.get_option_chain = AsyncMock(return_value=SAMPLE_CHAIN)
-        client = TestClient(make_app(mock_client))
+        mock_service = MagicMock()
+        mock_service.get_option_chain = AsyncMock(return_value=SAMPLE_CHAIN)
+        client = TestClient(make_app(mock_service))
 
         # delta=0.30 with tolerance 0.05 — both rows (0.31 and -0.29) should pass
         response = client.get("/options-chain?tickers=QQQ&delta=0.30")
         assert len(response.json()["rows"]) == 2
 
     def test_missing_tickers_returns_422(self):
-        mock_client = MagicMock()
-        client = TestClient(make_app(mock_client))
+        mock_service = MagicMock()
+        client = TestClient(make_app(mock_service))
         response = client.get("/options-chain")
         assert response.status_code == 422
 
-    def test_no_schwab_client_returns_503(self):
+    def test_no_schwab_service_returns_503(self):
         app = FastAPI()
         app.include_router(router)
         client = TestClient(app)
@@ -181,27 +181,27 @@ class TestGetOptionsChainEndpoint:
         assert response.status_code == 503
 
     def test_schwab_error_returns_500(self):
-        mock_client = MagicMock()
-        mock_client.get_option_chain = AsyncMock(side_effect=Exception("API down"))
-        client = TestClient(make_app(mock_client))
+        mock_service = MagicMock()
+        mock_service.get_option_chain = AsyncMock(side_effect=Exception("API down"))
+        client = TestClient(make_app(mock_service))
         response = client.get("/options-chain?tickers=QQQ")
         assert response.status_code == 500
 
     def test_multiple_tickers_serialized(self):
-        mock_client = MagicMock()
-        mock_client.get_option_chain = AsyncMock(return_value=SAMPLE_CHAIN)
-        client = TestClient(make_app(mock_client))
+        mock_service = MagicMock()
+        mock_service.get_option_chain = AsyncMock(return_value=SAMPLE_CHAIN)
+        client = TestClient(make_app(mock_service))
 
         response = client.get("/options-chain?tickers=QQQ&tickers=SPY")
         assert response.status_code == 200
-        assert mock_client.get_option_chain.call_count == 2
+        assert mock_service.get_option_chain.call_count == 2
 
-    def test_expiry_param_passed_to_client(self):
-        mock_client = MagicMock()
-        mock_client.get_option_chain = AsyncMock(return_value=SAMPLE_CHAIN)
-        client = TestClient(make_app(mock_client))
+    def test_expiry_param_passed_to_service(self):
+        mock_service = MagicMock()
+        mock_service.get_option_chain = AsyncMock(return_value=SAMPLE_CHAIN)
+        client = TestClient(make_app(mock_service))
 
         client.get("/options-chain?tickers=QQQ&expiry=2024-03-15")
-        call_kwargs = mock_client.get_option_chain.call_args
+        call_kwargs = mock_service.get_option_chain.call_args
         assert call_kwargs.kwargs.get("from_date") == "2024-03-15"
         assert call_kwargs.kwargs.get("to_date") == "2024-03-15"
