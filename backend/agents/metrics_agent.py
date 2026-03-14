@@ -1,4 +1,5 @@
 from backend.agents.state import PipelineState
+from backend.services.trades_comparison_service import TradesComparisonService
 
 __all__ = ["MetricsAgent"]
 
@@ -6,11 +7,14 @@ __all__ = ["MetricsAgent"]
 class MetricsAgent:
     """Agent responsible for computing financial and options metrics.
 
-    In the full pipeline this agent will calculate Greeks, implied
-    volatility surfaces, historical volatility, and other quantitative
-    metrics required downstream by the TradabilityAgent.  For now it
-    is a stub that returns the state dict with ``metrics`` set to None.
+    Delegates tradability scoring and CCP calculation to
+    :class:`~backend.services.trades_comparison_service.TradesComparisonService`.
+    Greeks, implied-volatility surfaces, and historical volatility are
+    planned for a future iteration.
     """
+
+    def __init__(self) -> None:
+        self._service = TradesComparisonService()
 
     def run(self, state: PipelineState) -> PipelineState:
         """Execute the metrics computation step.
@@ -23,11 +27,20 @@ class MetricsAgent:
         Returns
         -------
         PipelineState
-            The state dict with ``metrics`` set to None until this agent
-            is fully implemented.
+            The updated state dict.  ``metrics`` is populated with the
+            tradability scores returned by
+            :class:`~backend.services.trades_comparison_service.TradesComparisonService`
+            when options data is present, otherwise it is set to ``None``.
         """
-        # TODO: implement Greeks, IV surface, and historical volatility.
-        state["metrics"] = None
+        options_data = state.get("options_data")
+        if options_data:
+            try:
+                state["metrics"] = self._service.score_trades(options_data)
+            except Exception:  # noqa: BLE001
+                state["metrics"] = None
+        else:
+            # TODO: implement Greeks, IV surface, and historical volatility.
+            state["metrics"] = None
         return state
 
     def __call__(self, state: PipelineState) -> PipelineState:
