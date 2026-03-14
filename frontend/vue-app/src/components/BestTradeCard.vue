@@ -83,15 +83,54 @@
 import { computed } from 'vue'
 
 const props = defineProps({
+  /**
+   * Accepts either:
+   *   - a single trade object (legacy), or
+   *   - an array of trade objects as returned by GET /trades
+   * When an array is supplied the first element (highest score) is displayed.
+   */
   trade: {
-    type: Object,
+    type: [Object, Array],
     default: null
   }
 })
 
+/** Resolve the single best trade regardless of whether a list or object was passed. */
+const bestTrade = computed(() => {
+  if (!props.trade) return null
+  if (Array.isArray(props.trade)) {
+    return props.trade.length > 0 ? props.trade[0] : null
+  }
+  return props.trade
+})
+
+/**
+ * Extract the numeric score from the new nested `tradability_score` object,
+ * falling back to a top-level `score` field for backwards compatibility.
+ */
+const tradabilityScore = computed(() => {
+  if (!bestTrade.value) return null
+  if (
+    bestTrade.value.tradability_score !== undefined &&
+    bestTrade.value.tradability_score !== null
+  ) {
+    // New shape: { tradability_score: { score: 0.87, ... } }
+    if (
+      typeof bestTrade.value.tradability_score === 'object' &&
+      bestTrade.value.tradability_score.score !== undefined
+    ) {
+      return bestTrade.value.tradability_score.score
+    }
+    // Flat numeric value on the key
+    return bestTrade.value.tradability_score
+  }
+  // Legacy shape: { score: 0.87 }
+  return bestTrade.value.score ?? null
+})
+
 const optionTypeClass = computed(() => {
-  if (!props.trade?.option_type) return ''
-  return props.trade.option_type.toLowerCase() === 'call' ? 'type-call' : 'type-put'
+  if (!bestTrade.value?.option_type) return ''
+  return bestTrade.value.option_type.toLowerCase() === 'call' ? 'type-call' : 'type-put'
 })
 
 function formatNumber(value) {
