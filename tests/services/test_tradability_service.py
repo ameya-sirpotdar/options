@@ -1,6 +1,5 @@
-tests/services/test_tradability_service.py
 import pytest
-from backend.services.tradability_service import extract_metrics, compute_score, rank_candidates
+from backend.services.trades_comparison_service import extract_metrics, compute_score, rank_candidates
 
 
 # ---------------------------------------------------------------------------
