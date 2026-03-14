@@ -2,7 +2,9 @@ from datetime import date, timedelta
 
 import pytest
 
-from backend.services.schwab_filters import filter_contracts, _is_weekly_expiry
+from backend.services.schwab_service import SchwabService, _is_weekly_expiry
+
+filter_contracts = SchwabService.filter_contracts
 
 
 def _make_chain(expiry: str, strike: str, delta: float) -> dict:
