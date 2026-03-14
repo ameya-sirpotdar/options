@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from backend.services.schwab_auth import get_access_token
+from backend.services.schwab_service import SchwabService
 
 
 def _mock_secret_client(secrets: dict):
@@ -11,9 +11,9 @@ def _mock_secret_client(secrets: dict):
     return client
 
 
-@patch("backend.services.schwab_auth.httpx.post")
-@patch("backend.services.schwab_auth.SecretClient")
-@patch("backend.services.schwab_auth.DefaultAzureCredential")
+@patch("backend.services.schwab_service.httpx.post")
+@patch("backend.services.schwab_service.SecretClient")
+@patch("backend.services.schwab_service.DefaultAzureCredential")
 def test_get_access_token_returns_token(mock_cred, mock_sc, mock_post):
     mock_sc.return_value = _mock_secret_client({
         "schwab-client-id": "test-id",
@@ -21,14 +21,15 @@ def test_get_access_token_returns_token(mock_cred, mock_sc, mock_post):
     })
     mock_post.return_value = MagicMock(status_code=200, json=lambda: {"access_token": "tok123"})
 
-    token = get_access_token(vault_url="https://fake.vault.azure.net")
+    service = SchwabService(vault_url="https://fake.vault.azure.net")
+    token = service.get_access_token()
 
     assert token == "tok123"
 
 
-@patch("backend.services.schwab_auth.httpx.post")
-@patch("backend.services.schwab_auth.SecretClient")
-@patch("backend.services.schwab_auth.DefaultAzureCredential")
+@patch("backend.services.schwab_service.httpx.post")
+@patch("backend.services.schwab_service.SecretClient")
+@patch("backend.services.schwab_service.DefaultAzureCredential")
 def test_get_access_token_calls_token_url(mock_cred, mock_sc, mock_post):
     mock_sc.return_value = _mock_secret_client({
         "schwab-client-id": "id",
@@ -36,15 +37,16 @@ def test_get_access_token_calls_token_url(mock_cred, mock_sc, mock_post):
     })
     mock_post.return_value = MagicMock(json=lambda: {"access_token": "t"})
 
-    get_access_token(vault_url="https://fake.vault.azure.net")
+    service = SchwabService(vault_url="https://fake.vault.azure.net")
+    service.get_access_token()
 
     args, kwargs = mock_post.call_args
     assert "schwabapi.com" in args[0]
 
 
-@patch("backend.services.schwab_auth.httpx.post")
-@patch("backend.services.schwab_auth.SecretClient")
-@patch("backend.services.schwab_auth.DefaultAzureCredential")
+@patch("backend.services.schwab_service.httpx.post")
+@patch("backend.services.schwab_service.SecretClient")
+@patch("backend.services.schwab_service.DefaultAzureCredential")
 def test_get_access_token_raises_on_http_error(mock_cred, mock_sc, mock_post):
     mock_sc.return_value = _mock_secret_client({
         "schwab-client-id": "id",
@@ -53,5 +55,6 @@ def test_get_access_token_raises_on_http_error(mock_cred, mock_sc, mock_post):
     mock_post.return_value = MagicMock()
     mock_post.return_value.raise_for_status.side_effect = Exception("401 Unauthorized")
 
+    service = SchwabService(vault_url="https://fake.vault.azure.net")
     with pytest.raises(Exception, match="401"):
-        get_access_token(vault_url="https://fake.vault.azure.net")
+        service.get_access_token()
