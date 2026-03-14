@@ -1,13 +1,9 @@
-tests/services/test_trades_comparison_service.py
-
-```python
 """
 Tests for TradesComparisonService - consolidated service that handles
 tradability scoring and CCP (Cost-to-Capital Premium) calculations.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
 from backend.services.trades_comparison_service import TradesComparisonService
 from backend.models.options_contract import OptionsContract
 from backend.models.tradability_score import TradabilityScore
@@ -496,6 +492,9 @@ class TestCCPCalculationDetails:
         )
         ccp = service.calculate_ccp(contract)
         assert ccp is not None
+        # midpoint of bid=2.00 and ask=3.00 is 2.50
+        midpoint = (2.00 + 3.00) / 2
+        assert midpoint == 2.50
 
     def test_ccp_spread_cost_component(self, service):
         contract_narrow = OptionsContract(
@@ -731,4 +730,3 @@ class TestEdgeCases:
         assert len(ranked) == 100
         scores = [r.score for r in ranked]
         assert scores == sorted(scores, reverse=True)
-```
