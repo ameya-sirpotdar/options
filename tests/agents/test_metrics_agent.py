@@ -1,4 +1,3 @@
-tests/agents/test_metrics_agent.py
 from backend.agents.metrics_agent import MetricsAgent
 
 
