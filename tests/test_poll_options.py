@@ -26,6 +26,11 @@ def mock_agent_result(tickers):
     }
 
 
+# NOTE: POST /poll/options has been removed as part of the RESTful API redesign.
+# The public polling endpoint is no longer available. Use GET /options-chain
+# for options chain data and GET /trades for tradability scores.
+
+
 # ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
@@ -304,7 +309,7 @@ class TestPersistenceIntegration:
     def test_persistence_failure_does_not_crash_poll(self, mock_run):
         """Storage errors must be swallowed; the HTTP response must still be 200."""
         mock_run.return_value = mock_agent_result(["AAPL"])
-        with patch("backend.main.azure_table_service") as mock_svc:
+        with patch("backend.api.routers.options_chain.azure_table_service") as mock_svc:
             mock_svc.upsert_options_contracts.side_effect = Exception("storage unavailable")
             mock_svc.upsert_run_log.side_effect = Exception("storage unavailable")
             response = client.get("/options-chain", params=make_query_params(["AAPL"]))
@@ -313,7 +318,7 @@ class TestPersistenceIntegration:
     @patch("backend.services.polling_service.run_options_poll")
     def test_persistence_failure_still_returns_results(self, mock_run):
         mock_run.return_value = mock_agent_result(["AAPL"])
-        with patch("backend.main.azure_table_service") as mock_svc:
+        with patch("backend.api.routers.options_chain.azure_table_service") as mock_svc:
             mock_svc.upsert_options_contracts.side_effect = Exception("storage unavailable")
             mock_svc.upsert_run_log.side_effect = Exception("storage unavailable")
             response = client.get("/options-chain", params=make_query_params(["AAPL"]))
@@ -324,7 +329,7 @@ class TestPersistenceIntegration:
     @patch("backend.services.polling_service.run_options_poll")
     def test_persistence_failure_still_returns_run_id(self, mock_run):
         mock_run.return_value = mock_agent_result(["AAPL"])
-        with patch("backend.main.azure_table_service") as mock_svc:
+        with patch("backend.api.routers.options_chain.azure_table_service") as mock_svc:
             mock_svc.upsert_options_contracts.side_effect = Exception("storage unavailable")
             mock_svc.upsert_run_log.side_effect = Exception("storage unavailable")
             response = client.get("/options-chain", params=make_query_params(["AAPL"]))
@@ -335,7 +340,7 @@ class TestPersistenceIntegration:
     def test_none_azure_service_does_not_crash_poll(self, mock_run):
         """If azure_table_service is None (not configured), poll must still succeed."""
         mock_run.return_value = mock_agent_result(["AAPL"])
-        with patch("backend.main.azure_table_service", None):
+        with patch("backend.api.routers.options_chain.azure_table_service", None):
             response = client.get("/options-chain", params=make_query_params(["AAPL"]))
         assert response.status_code == 200
 
