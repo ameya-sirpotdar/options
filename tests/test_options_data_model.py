@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from backend.models.options_data import OptionsContractRecord
+from backend.models.options_contract import OptionsContractRecord
 
 
 def _base_payload(**overrides) -> dict:
