@@ -1,7 +1,6 @@
 from unittest.mock import patch, MagicMock
 
 from backend.agents.options_data_agent import OptionsDataAgent
-from backend.services.trades_comparison_service import TradesComparisonService
 
 
 def test_options_data_agent_instantiation():
@@ -119,7 +118,7 @@ def test_agent_enriches_put_options_with_annualized_roi():
     ]
 
     with patch(
-        "backend.agents.options_data_agent.TradesComparisonService.enrich_put_options_with_roi",
+        "backend.agents.options_data_agent.enrich_put_options_with_roi",
         return_value=enriched_list,
     ) as mock_enrich:
         state = {"ticker": "AAPL", "options_data": put_options}
@@ -139,7 +138,7 @@ def test_agent_calls_enrich_with_put_options_list():
     put_options = _make_put_options_data()
 
     with patch(
-        "backend.agents.options_data_agent.TradesComparisonService.enrich_put_options_with_roi"
+        "backend.agents.options_data_agent.enrich_put_options_with_roi"
     ) as mock_enrich:
         mock_enrich.return_value = put_options  # return unchanged for simplicity
         state = {"ticker": "AAPL", "options_data": put_options}
@@ -158,7 +157,7 @@ def test_agent_replaces_options_data_with_enriched_list():
     ]
 
     with patch(
-        "backend.agents.options_data_agent.TradesComparisonService.enrich_put_options_with_roi",
+        "backend.agents.options_data_agent.enrich_put_options_with_roi",
         return_value=enriched_options,
     ):
         state = {"ticker": "AAPL", "options_data": put_options}
@@ -172,7 +171,7 @@ def test_agent_skips_enrichment_when_options_data_is_none():
     agent = OptionsDataAgent()
 
     with patch(
-        "backend.agents.options_data_agent.TradesComparisonService.enrich_put_options_with_roi"
+        "backend.agents.options_data_agent.enrich_put_options_with_roi"
     ) as mock_enrich:
         state = {"ticker": "AAPL", "options_data": None}
         result = agent.run(state)
@@ -186,7 +185,7 @@ def test_agent_skips_enrichment_when_options_data_missing_from_state():
     agent = OptionsDataAgent()
 
     with patch(
-        "backend.agents.options_data_agent.TradesComparisonService.enrich_put_options_with_roi"
+        "backend.agents.options_data_agent.enrich_put_options_with_roi"
     ) as mock_enrich:
         state = {"ticker": "AAPL"}
         agent.run(state)
@@ -199,7 +198,7 @@ def test_agent_skips_enrichment_when_options_data_is_empty_list():
     agent = OptionsDataAgent()
 
     with patch(
-        "backend.agents.options_data_agent.TradesComparisonService.enrich_put_options_with_roi"
+        "backend.agents.options_data_agent.enrich_put_options_with_roi"
     ) as mock_enrich:
         state = {"ticker": "AAPL", "options_data": []}
         result = agent.run(state)
@@ -218,7 +217,7 @@ def test_agent_enrichment_does_not_affect_other_state_keys():
     ]
 
     with patch(
-        "backend.agents.options_data_agent.TradesComparisonService.enrich_put_options_with_roi",
+        "backend.agents.options_data_agent.enrich_put_options_with_roi",
         return_value=enriched_options,
     ):
         state = {
@@ -240,7 +239,7 @@ def test_agent_enrichment_preserves_existing_errors():
     put_options = _make_put_options_data()
 
     with patch(
-        "backend.agents.options_data_agent.TradesComparisonService.enrich_put_options_with_roi",
+        "backend.agents.options_data_agent.enrich_put_options_with_roi",
         return_value=put_options,
     ):
         state = {
