@@ -1,4 +1,9 @@
-"""LangGraph StateGraph wiring for the options analysis pipeline."""
+"""LangGraph StateGraph wiring for the options analysis pipeline.
+
+Agents in this pipeline delegate to consolidated backend services:
+- ``OptionsDataAgent``  →  ``SchwabService``
+- ``TradabilityAgent``  →  ``TradesComparisonService``
+"""
 
 from functools import lru_cache
 from typing import Optional
