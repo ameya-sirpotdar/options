@@ -3,5 +3,6 @@ from pydantic import BaseModel
 
 
 class TradabilityScore(BaseModel):
+    symbol: str
     score: float
-    label: str
+    recommendation: str
