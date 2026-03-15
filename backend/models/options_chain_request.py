@@ -1,14 +1,12 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
 class OptionsChainRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    symbol: str = Field(..., description="The ticker symbol for the underlying asset")
+    symbol: str = Field(..., description="The ticker symbol for the options chain")
     contract_type: Optional[str] = Field(
         default="ALL",
-        description="Type of options contract: CALL, PUT, or ALL",
+        description="Type of contracts to return: CALL, PUT, or ALL",
     )
     strike_count: Optional[int] = Field(
         default=10,
@@ -16,24 +14,23 @@ class OptionsChainRequest(BaseModel):
     )
     include_underlying_quote: Optional[bool] = Field(
         default=True,
-        description="Whether to include a quote for the underlying asset",
+        description="Whether to include the underlying quote in the response",
     )
     strategy: Optional[str] = Field(
         default="SINGLE",
-        description="Options strategy type (e.g., SINGLE, COVERED, VERTICAL, etc.)",
+        description="Options strategy type",
     )
     interval: Optional[float] = Field(
         default=None,
-        description="Strike interval for spread strategies",
+        description="Strike interval for spread strategy chains",
     )
     strike: Optional[float] = Field(
         default=None,
-        description="Specific strike price to filter by",
+        description="Specific strike price to return",
     )
-    strike_range: Optional[str] = Field(
+    range: Optional[str] = Field(
         default="ALL",
-        alias="range",
-        description="Range of strikes: ITM, NTM, OTM, SAK, SBK, SNK, or ALL",
+        description="Range of strikes to return: ITM, NTM, OTM, SAK, SBK, SNK, ALL",
     )
     from_date: Optional[str] = Field(
         default=None,
@@ -61,13 +58,9 @@ class OptionsChainRequest(BaseModel):
     )
     exp_month: Optional[str] = Field(
         default="ALL",
-        description="Expiration month filter (e.g., JAN, FEB, ..., ALL)",
+        description="Expiration month filter",
     )
     option_type: Optional[str] = Field(
         default=None,
-        description="Option type: S (standard), NS (non-standard), or ALL",
-    )
-    entitlement: Optional[str] = Field(
-        default=None,
-        description="Entitlement level: PN (paying non-pro), NP (non-paying), PP (paying pro)",
+        description="Option type filter",
     )
