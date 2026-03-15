@@ -245,6 +245,11 @@ class TestTradabilityScoreImport:
         score_max = TradabilityScore(symbol="AAPL", score=1.0)
         assert score_min.score == 0.0
         assert score_max.score == 1.0
+        # Invalid scores outside [0.0, 1.0] should raise a validation error
+        with pytest.raises((ValidationError, ValueError)):
+            TradabilityScore(symbol="AAPL", score=-0.1)
+        with pytest.raises((ValidationError, ValueError)):
+            TradabilityScore(symbol="AAPL", score=1.1)
 
     def test_tradability_score_optional_fields(self):
         """Test that TradabilityScore has optional fields."""
