@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from backend.services.schwab_client import SchwabClient
+from backend.services.schwab_service import SchwabService as SchwabClient
 
 logger = logging.getLogger(__name__)
 
