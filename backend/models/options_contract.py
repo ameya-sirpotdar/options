@@ -1,30 +1,58 @@
 backend/models/options_contract.py
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel
 from typing import Optional
 
 
 class OptionsContract(BaseModel):
-    symbol: str = Field(..., description="The option contract symbol")
-    underlying_symbol: str = Field(..., description="The underlying asset symbol")
-    expiration_date: str = Field(..., description="Expiration date in YYYY-MM-DD format")
-    strike_price: float = Field(..., description="Strike price of the option")
-    option_type: str = Field(..., description="Option type: 'CALL' or 'PUT'")
-    bid: Optional[float] = Field(None, description="Bid price")
-    ask: Optional[float] = Field(None, description="Ask price")
-    last: Optional[float] = Field(None, description="Last traded price")
-    mark: Optional[float] = Field(None, description="Mark price (midpoint of bid/ask)")
-    volume: Optional[int] = Field(None, description="Trading volume")
-    open_interest: Optional[int] = Field(None, description="Open interest")
-    implied_volatility: Optional[float] = Field(None, description="Implied volatility")
-    delta: Optional[float] = Field(None, description="Delta greek")
-    gamma: Optional[float] = Field(None, description="Gamma greek")
-    theta: Optional[float] = Field(None, description="Theta greek")
-    vega: Optional[float] = Field(None, description="Vega greek")
-    rho: Optional[float] = Field(None, description="Rho greek")
-    in_the_money: Optional[bool] = Field(None, description="Whether the option is in the money")
-    intrinsic_value: Optional[float] = Field(None, description="Intrinsic value of the option")
-    extrinsic_value: Optional[float] = Field(None, description="Extrinsic (time) value of the option")
-    days_to_expiration: Optional[int] = Field(None, description="Number of days until expiration")
-
-    class Config:
-        populate_by_name = True
+    symbol: str
+    description: Optional[str] = None
+    exchange_name: Optional[str] = None
+    bid: Optional[float] = None
+    ask: Optional[float] = None
+    last: Optional[float] = None
+    mark: Optional[float] = None
+    bid_size: Optional[int] = None
+    ask_size: Optional[int] = None
+    bid_ask_size: Optional[str] = None
+    last_size: Optional[int] = None
+    high_price: Optional[float] = None
+    low_price: Optional[float] = None
+    open_price: Optional[float] = None
+    close_price: Optional[float] = None
+    total_volume: Optional[int] = None
+    trade_date: Optional[int] = None
+    quote_time_in_long: Optional[int] = None
+    trade_time_in_long: Optional[int] = None
+    net_change: Optional[float] = None
+    volatility: Optional[float] = None
+    delta: Optional[float] = None
+    gamma: Optional[float] = None
+    theta: Optional[float] = None
+    vega: Optional[float] = None
+    rho: Optional[float] = None
+    open_interest: Optional[int] = None
+    time_value: Optional[float] = None
+    theoretical_option_value: Optional[float] = None
+    theoretical_volatility: Optional[float] = None
+    strike_price: Optional[float] = None
+    expiration_date: Optional[str] = None
+    days_to_expiration: Optional[int] = None
+    expiration_type: Optional[str] = None
+    last_trading_day: Optional[int] = None
+    multiplier: Optional[float] = None
+    settlement_type: Optional[str] = None
+    deliverable_note: Optional[str] = None
+    percent_change: Optional[float] = None
+    mark_change: Optional[float] = None
+    mark_percent_change: Optional[float] = None
+    intrinsic_value: Optional[float] = None
+    extrinsic_value: Optional[float] = None
+    option_root: Optional[str] = None
+    high_52_week: Optional[float] = None
+    low_52_week: Optional[float] = None
+    in_the_money: Optional[bool] = None
+    non_standard: Optional[bool] = None
+    mini: Optional[bool] = None
+    penny_pilot: Optional[bool] = None
+    option_deliverables_list: Optional[list] = None
