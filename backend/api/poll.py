@@ -1,8 +1,13 @@
 from typing import Any, Dict, List
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
 router = APIRouter()
+
+
+class PollOptionsBody(BaseModel):
+    tickers: List[str]
 
 
 def _flatten_chain(ticker: str, chain: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -36,3 +41,21 @@ def _flatten_chain(ticker: str, chain: Dict[str, Any]) -> List[Dict[str, Any]]:
                         "inTheMoney": contract.get("inTheMoney"),
                     })
     return rows
+
+
+@router.post("/poll/options")
+async def poll_options(body: PollOptionsBody, request: Request):
+    """Internal endpoint: fetch and flatten options chain for each ticker."""
+    schwab_client = getattr(request.app.state, "schwab_client", None)
+    if schwab_client is None:
+        raise HTTPException(status_code=503, detail="Schwab service not available.")
+
+    rows: List[Dict[str, Any]] = []
+    try:
+        for ticker in body.tickers:
+            chain = await schwab_client.get_option_chain(ticker)
+            rows.extend(_flatten_chain(ticker, chain))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return {"rows": rows}

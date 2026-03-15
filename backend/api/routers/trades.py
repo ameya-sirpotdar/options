@@ -23,6 +23,38 @@ def rank_candidates(candidates: List[Dict[str, Any]]) -> Optional[Dict[str, Any]
     return candidates[0]
 
 
+@router.get("")
+def get_trades(request: Request):
+    """
+    Return the single best trade candidate ranked by the tradability index.
+    """
+    svc = getattr(request.app.state, "azure_table_service", None)
+
+    try:
+        candidates = fetch_candidates(svc)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    if not candidates:
+        raise HTTPException(
+            status_code=404,
+            detail="No options data found in storage.",
+        )
+
+    try:
+        best = rank_candidates(candidates)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    if best is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No valid trade candidates could be ranked.",
+        )
+
+    return best
+
+
 @router.get("/best")
 def get_best_trade(request: Request):
     """

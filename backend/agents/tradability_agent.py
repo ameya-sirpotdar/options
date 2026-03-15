@@ -24,11 +24,12 @@ class TradabilityAgent:
         """
         result = dict(state)
         trades = state.get("trades") or []
-        try:
-            score = self._service.compute_tradability_score(trades)
-        except Exception:  # noqa: BLE001
-            score = None
-        result["tradability_score"] = score
+        if trades or "tradability_score" in state:
+            try:
+                score = self._service.compute_tradability_score(trades)
+            except Exception:  # noqa: BLE001
+                score = None
+            result["tradability_score"] = score
         return result
 
     def __call__(self, state: PipelineState) -> PipelineState:

@@ -42,7 +42,6 @@ app.add_middleware(
 app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(health_router)
-app.include_router(poll_router)
 app.include_router(options_chain_router)
 app.include_router(trades_router)
 

@@ -692,6 +692,11 @@ class SchwabService:
     def get_auth_url(self) -> str:
         raise NotImplementedError("get_auth_url is not implemented in this service version")
 
+    @staticmethod
+    def get_filtered_options(tickers: List[str]) -> Dict[str, List[Dict[str, Any]]]:
+        """Class-level alias for the module-level get_filtered_options function."""
+        return get_filtered_options(tickers)
+
     def exchange_code_for_token(self, code: str) -> Dict[str, Any]:
         raise NotImplementedError("exchange_code_for_token is not implemented")
 

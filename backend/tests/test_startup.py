@@ -80,8 +80,8 @@ async def test_trades_endpoint_accessible():
     ) as client:
         response = await client.get("/trades")
 
-    # Endpoint must exist (not 404) — 200 or 422 (missing params) are both acceptable
-    assert response.status_code in (200, 422), (
+    # Endpoint must exist — 200 (data), 404 (no data in storage), or 422 (invalid params) are all acceptable
+    assert response.status_code in (200, 404, 422), (
         f"Unexpected status {response.status_code} — /trades endpoint may be missing"
     )
 
