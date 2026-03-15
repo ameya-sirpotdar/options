@@ -1,4 +1,5 @@
 from backend.agents.state import PipelineState
+from backend.services.trades_comparison_service import TradesComparisonService
 
 __all__ = ["TradabilityAgent"]
 
