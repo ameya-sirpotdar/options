@@ -90,7 +90,7 @@ def run_pipeline(
         "options_data": None,
         "metrics": None,
         "market_sentiment": None,
-        "tradability_scores": [],
+        "tradability_score": None,
         "errors": [],
     }
     try:
