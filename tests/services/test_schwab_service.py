@@ -1,4 +1,4 @@
-tests/services/test_schwab_service.py
+"""Tests for SchwabService."""
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from backend.services.schwab_service import SchwabService
