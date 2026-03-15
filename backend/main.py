@@ -68,10 +68,10 @@ async def startup_event() -> None:
     try:
         vault_url = os.getenv("AZURE_KEY_VAULT_URL")  # optional
         schwab_service = SchwabService(vault_url=vault_url)
-        app.state.schwab_client = schwab_service
+        app.state.schwab_service = schwab_service
         logger.info("SchwabService initialised and attached to app.state")
     except Exception as exc:
         logger.warning(
             "SchwabService could not be initialised at startup: %s", exc
         )
-        app.state.schwab_client = None
+        app.state.schwab_service = None
