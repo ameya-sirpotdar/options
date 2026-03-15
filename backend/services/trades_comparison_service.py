@@ -1,3 +1,4 @@
+import math
 from typing import Optional
 from backend.models.options_contract import OptionsContract
 from backend.models.tradability_score import TradabilityScore
@@ -12,33 +13,30 @@ class TradesComparisonService:
 
     def compare_trades(
         self,
-        contract_a: OptionsContract,
-        contract_b: OptionsContract,
-    ) -> dict:
+        contracts: list[OptionsContract],
+    ) -> list[dict]:
         """
-        Compare two options contracts and return a comparison result.
+        Compare a list of options contracts and return ranked comparison results.
 
         Args:
-            contract_a: First options contract to compare.
-            contract_b: Second options contract to compare.
+            contracts: List of options contracts to compare.
 
         Returns:
-            A dictionary containing comparison results for both contracts.
+            A list of dicts with contract and score, sorted descending by total score.
         """
-        score_a = self._score_contract(contract_a)
-        score_b = self._score_contract(contract_b)
+        return self.rank_contracts(contracts)
 
-        return {
-            "contract_a": {
-                "contract": contract_a,
-                "score": score_a,
-            },
-            "contract_b": {
-                "contract": contract_b,
-                "score": score_b,
-            },
-            "preferred": "contract_a" if score_a.total >= score_b.total else "contract_b",
-        }
+    def score_trade(self, contract: OptionsContract) -> TradabilityScore:
+        """
+        Public alias for scoring a single options contract.
+
+        Args:
+            contract: The options contract to score.
+
+        Returns:
+            A TradabilityScore instance representing the contract's score.
+        """
+        return self._score_contract(contract)
 
     def _score_contract(self, contract: OptionsContract) -> TradabilityScore:
         """
@@ -106,7 +104,6 @@ class TradesComparisonService:
         spread_score = max(0.0, 40.0 * (1.0 - min(metrics.spread_pct, 1.0)))
 
         # Volume score: log-scale up to 30 pts, capped at volume=1000
-        import math
         if metrics.volume > 0:
             volume_score = min(30.0, 30.0 * math.log10(metrics.volume + 1) / math.log10(1001))
         else:
@@ -133,6 +130,21 @@ class TradesComparisonService:
             delta_score=round(delta_score, 4),
             total=round(total, 4),
         )
+
+    def rank_trades(
+        self,
+        contracts: list[OptionsContract],
+    ) -> list[dict]:
+        """
+        Alias for rank_contracts. Rank a list of options contracts by their tradability score.
+
+        Args:
+            contracts: List of options contracts to rank.
+
+        Returns:
+            A list of dicts with contract and score, sorted descending by total score.
+        """
+        return self.rank_contracts(contracts)
 
     def rank_contracts(
         self,
