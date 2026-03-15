@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from backend.services.schwab_service import SchwabService
+from backend.services.schwab_service import get_access_token
 
 
 def _mock_secret_client(secrets: dict):
@@ -21,7 +21,7 @@ def test_get_access_token_returns_token(mock_cred, mock_sc, mock_post):
     })
     mock_post.return_value = MagicMock(status_code=200, json=lambda: {"access_token": "tok123"})
 
-    token = SchwabService.get_access_token(vault_url="https://fake.vault.azure.net")
+    token = get_access_token(vault_url="https://fake.vault.azure.net")
 
     assert token == "tok123"
 
@@ -36,7 +36,7 @@ def test_get_access_token_calls_token_url(mock_cred, mock_sc, mock_post):
     })
     mock_post.return_value = MagicMock(json=lambda: {"access_token": "t"})
 
-    SchwabService.get_access_token(vault_url="https://fake.vault.azure.net")
+    get_access_token(vault_url="https://fake.vault.azure.net")
 
     args, kwargs = mock_post.call_args
     assert "schwabapi.com" in args[0]
@@ -54,4 +54,4 @@ def test_get_access_token_raises_on_http_error(mock_cred, mock_sc, mock_post):
     mock_post.return_value.raise_for_status.side_effect = Exception("401 Unauthorized")
 
     with pytest.raises(Exception, match="401"):
-        SchwabService.get_access_token(vault_url="https://fake.vault.azure.net")
+        get_access_token(vault_url="https://fake.vault.azure.net")
