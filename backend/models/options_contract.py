@@ -1,5 +1,4 @@
 backend/models/options_contract.py
-
 from pydantic import BaseModel
 from typing import Optional
 
@@ -23,7 +22,6 @@ class OptionsContract(BaseModel):
     total_volume: Optional[int] = None
     trade_date: Optional[int] = None
     quote_time_in_long: Optional[int] = None
-    trade_time_in_long: Optional[int] = None
     net_change: Optional[float] = None
     volatility: Optional[float] = None
     delta: Optional[float] = None
@@ -36,7 +34,7 @@ class OptionsContract(BaseModel):
     theoretical_option_value: Optional[float] = None
     theoretical_volatility: Optional[float] = None
     strike_price: Optional[float] = None
-    expiration_date: Optional[str] = None
+    expiration_date: Optional[int] = None
     days_to_expiration: Optional[int] = None
     expiration_type: Optional[str] = None
     last_trading_day: Optional[int] = None
@@ -49,8 +47,10 @@ class OptionsContract(BaseModel):
     intrinsic_value: Optional[float] = None
     extrinsic_value: Optional[float] = None
     option_root: Optional[str] = None
+    exercise_type: Optional[str] = None
     high_52_week: Optional[float] = None
     low_52_week: Optional[float] = None
+    status: Optional[str] = None
     in_the_money: Optional[bool] = None
     non_standard: Optional[bool] = None
     mini: Optional[bool] = None
