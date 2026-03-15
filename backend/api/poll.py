@@ -43,6 +43,9 @@ def _flatten_chain(ticker: str, chain: Dict[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
+# NOTE: This endpoint is intentionally hidden from the public API docs.
+# It is used internally by the polling service and is not intended for
+# direct use by end users. Use POST /trades instead.
 @router.post("/poll/options", include_in_schema=False)
 async def post_poll_options(http_request: Request, body: PollOptionsRequest):
     schwab_client = getattr(http_request.app.state, "schwab_client", None)
