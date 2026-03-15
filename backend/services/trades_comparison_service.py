@@ -1,4 +1,4 @@
-import math
+backend/services/trades_comparison_service.py
 from typing import Optional
 from backend.models.options_contract import OptionsContract
 from backend.models.tradability_score import TradabilityScore
@@ -8,69 +8,71 @@ from backend.models.tradability_metrics import TradabilityMetrics
 class TradesComparisonService:
     """
     Service for comparing and scoring options trades.
-    Consolidates trade scoring logic previously spread across multiple services.
+    Consolidates trade scoring logic previously spread across multiple files.
     """
+
+    def score_trade(
+        self,
+        contract: OptionsContract,
+        metrics: Optional[TradabilityMetrics] = None,
+    ) -> TradabilityScore:
+        """
+        Score a single options contract for tradability.
+
+        Args:
+            contract: The options contract to score.
+            metrics: Optional pre-computed metrics. If not provided, they will
+                     be computed from the contract.
+
+        Returns:
+            A TradabilityScore instance representing the trade quality.
+        """
+        if metrics is None:
+            metrics = self._compute_metrics(contract)
+
+        score = self._calculate_score(contract, metrics)
+        return score
 
     def compare_trades(
         self,
         contracts: list[OptionsContract],
-    ) -> list[dict]:
+    ) -> list[TradabilityScore]:
         """
-        Compare a list of options contracts and return ranked comparison results.
+        Score and rank a list of options contracts.
 
         Args:
             contracts: List of options contracts to compare.
 
         Returns:
-            A list of dicts with contract and score, sorted descending by total score.
+            A list of TradabilityScore instances, sorted by score descending.
         """
-        return self.rank_contracts(contracts)
-
-    def score_trade(self, contract: OptionsContract) -> TradabilityScore:
-        """
-        Public alias for scoring a single options contract.
-
-        Args:
-            contract: The options contract to score.
-
-        Returns:
-            A TradabilityScore instance representing the contract's score.
-        """
-        return self._score_contract(contract)
-
-    def _score_contract(self, contract: OptionsContract) -> TradabilityScore:
-        """
-        Score a single options contract based on tradability metrics.
-
-        Args:
-            contract: The options contract to score.
-
-        Returns:
-            A TradabilityScore instance representing the contract's score.
-        """
-        metrics = self._compute_metrics(contract)
-        return self._compute_score(metrics)
+        scores = [self.score_trade(contract) for contract in contracts]
+        scores.sort(key=lambda s: s.score, reverse=True)
+        return scores
 
     def _compute_metrics(self, contract: OptionsContract) -> TradabilityMetrics:
         """
-        Compute tradability metrics for an options contract.
+        Compute tradability metrics from an options contract.
 
         Args:
-            contract: The options contract to evaluate.
+            contract: The options contract.
 
         Returns:
-            A TradabilityMetrics instance with computed values.
+            Computed TradabilityMetrics.
         """
-        bid = contract.bid if contract.bid is not None else 0.0
-        ask = contract.ask if contract.ask is not None else 0.0
-        volume = contract.volume if contract.volume is not None else 0
-        open_interest = contract.open_interest if contract.open_interest is not None else 0
-        delta = contract.delta if contract.delta is not None else 0.0
-        implied_volatility = contract.implied_volatility if contract.implied_volatility is not None else 0.0
-
+        bid = contract.bid or 0.0
+        ask = contract.ask or 0.0
         mid = (bid + ask) / 2.0 if (bid + ask) > 0 else 0.0
-        spread = ask - bid if ask >= bid else 0.0
-        spread_pct = (spread / mid) if mid > 0 else 0.0
+
+        spread = ask - bid
+        spread_pct = (spread / ask * 100.0) if ask > 0 else 0.0
+
+        open_interest = contract.open_interest or 0
+        volume = contract.total_volume or 0
+
+        delta = abs(contract.delta) if contract.delta is not None else 0.0
+        implied_volatility = contract.implied_volatility or 0.0
+        days_to_expiration = contract.days_to_expiration or 0
 
         return TradabilityMetrics(
             bid=bid,
@@ -78,112 +80,87 @@ class TradesComparisonService:
             mid=mid,
             spread=spread,
             spread_pct=spread_pct,
-            volume=volume,
             open_interest=open_interest,
+            volume=volume,
             delta=delta,
             implied_volatility=implied_volatility,
+            days_to_expiration=days_to_expiration,
         )
 
-    def _compute_score(self, metrics: TradabilityMetrics) -> TradabilityScore:
+    def _calculate_score(
+        self,
+        contract: OptionsContract,
+        metrics: TradabilityMetrics,
+    ) -> TradabilityScore:
         """
-        Compute a tradability score from metrics.
-
-        Scoring logic:
-        - Spread score: lower spread percentage is better (max 40 points)
-        - Volume score: higher volume is better (max 30 points)
-        - Open interest score: higher open interest is better (max 20 points)
-        - Delta score: delta closer to 0.3–0.4 range is better (max 10 points)
+        Calculate a tradability score from contract and metrics.
 
         Args:
-            metrics: The tradability metrics to score.
+            contract: The options contract.
+            metrics: Pre-computed tradability metrics.
 
         Returns:
-            A TradabilityScore instance with component and total scores.
+            A TradabilityScore instance.
         """
-        # Spread score: 0% spread = 40 pts, 100%+ spread = 0 pts
-        spread_score = max(0.0, 40.0 * (1.0 - min(metrics.spread_pct, 1.0)))
+        score = 0.0
+        reasons: list[str] = []
 
-        # Volume score: log-scale up to 30 pts, capped at volume=1000
-        if metrics.volume > 0:
-            volume_score = min(30.0, 30.0 * math.log10(metrics.volume + 1) / math.log10(1001))
+        # Liquidity: reward tight spreads
+        if metrics.spread_pct < 5.0:
+            score += 30.0
+            reasons.append("Tight bid-ask spread (<5%)")
+        elif metrics.spread_pct < 10.0:
+            score += 15.0
+            reasons.append("Moderate bid-ask spread (<10%)")
         else:
-            volume_score = 0.0
+            reasons.append("Wide bid-ask spread (>=10%)")
 
-        # Open interest score: log-scale up to 20 pts, capped at oi=10000
-        if metrics.open_interest > 0:
-            oi_score = min(20.0, 20.0 * math.log10(metrics.open_interest + 1) / math.log10(10001))
+        # Open interest
+        if metrics.open_interest >= 1000:
+            score += 25.0
+            reasons.append("High open interest (>=1000)")
+        elif metrics.open_interest >= 100:
+            score += 12.0
+            reasons.append("Moderate open interest (>=100)")
         else:
-            oi_score = 0.0
+            reasons.append("Low open interest (<100)")
 
-        # Delta score: ideal delta is 0.35 (absolute value), max 10 pts
-        abs_delta = abs(metrics.delta)
-        ideal_delta = 0.35
-        delta_distance = abs(abs_delta - ideal_delta)
-        delta_score = max(0.0, 10.0 * (1.0 - delta_distance / ideal_delta)) if ideal_delta > 0 else 0.0
+        # Volume
+        if metrics.volume >= 500:
+            score += 20.0
+            reasons.append("High volume (>=500)")
+        elif metrics.volume >= 50:
+            score += 10.0
+            reasons.append("Moderate volume (>=50)")
+        else:
+            reasons.append("Low volume (<50)")
 
-        total = spread_score + volume_score + oi_score + delta_score
+        # Delta: prefer near-the-money (0.3 to 0.7)
+        if 0.3 <= metrics.delta <= 0.7:
+            score += 15.0
+            reasons.append("Favorable delta range (0.3-0.7)")
+        elif 0.2 <= metrics.delta < 0.3 or 0.7 < metrics.delta <= 0.8:
+            score += 7.0
+            reasons.append("Acceptable delta range")
+        else:
+            reasons.append("Unfavorable delta range")
+
+        # Days to expiration: prefer 20-60 DTE
+        if 20 <= metrics.days_to_expiration <= 60:
+            score += 10.0
+            reasons.append("Optimal DTE (20-60 days)")
+        elif 10 <= metrics.days_to_expiration < 20 or 60 < metrics.days_to_expiration <= 90:
+            score += 5.0
+            reasons.append("Acceptable DTE")
+        else:
+            reasons.append("Suboptimal DTE")
+
+        # Clamp score to [0, 100]
+        score = max(0.0, min(100.0, score))
 
         return TradabilityScore(
-            spread_score=round(spread_score, 4),
-            volume_score=round(volume_score, 4),
-            open_interest_score=round(oi_score, 4),
-            delta_score=round(delta_score, 4),
-            total=round(total, 4),
+            contract=contract,
+            metrics=metrics,
+            score=score,
+            reasons=reasons,
         )
-
-    def rank_trades(
-        self,
-        contracts: list[OptionsContract],
-    ) -> list[dict]:
-        """
-        Alias for rank_contracts. Rank a list of options contracts by their tradability score.
-
-        Args:
-            contracts: List of options contracts to rank.
-
-        Returns:
-            A list of dicts with contract and score, sorted descending by total score.
-        """
-        return self.rank_contracts(contracts)
-
-    def rank_contracts(
-        self,
-        contracts: list[OptionsContract],
-    ) -> list[dict]:
-        """
-        Rank a list of options contracts by their tradability score.
-
-        Args:
-            contracts: List of options contracts to rank.
-
-        Returns:
-            A list of dicts with contract and score, sorted descending by total score.
-        """
-        scored = [
-            {
-                "contract": contract,
-                "score": self._score_contract(contract),
-            }
-            for contract in contracts
-        ]
-        scored.sort(key=lambda x: x["score"].total, reverse=True)
-        return scored
-
-    def get_best_contract(
-        self,
-        contracts: list[OptionsContract],
-    ) -> Optional[dict]:
-        """
-        Return the highest-scoring options contract from a list.
-
-        Args:
-            contracts: List of options contracts to evaluate.
-
-        Returns:
-            A dict with 'contract' and 'score' for the best contract,
-            or None if the list is empty.
-        """
-        if not contracts:
-            return None
-        ranked = self.rank_contracts(contracts)
-        return ranked[0]
