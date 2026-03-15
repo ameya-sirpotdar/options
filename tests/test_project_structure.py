@@ -6,22 +6,34 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
 EXPECTED_PATHS = [
+    # Python package markers
     "backend/api/__init__.py",
     "backend/agents/__init__.py",
     "backend/services/__init__.py",
     "backend/models/__init__.py",
-    # Per-file model structure
+    # Consolidated service files
+    "backend/services/schwab_service.py",
+    "backend/services/trades_comparison_service.py",
+    "backend/services/polling_service.py",
+    # Split model files (one model per file)
     "backend/models/options_contract.py",
     "backend/models/options_chain_request.py",
     "backend/models/options_chain_response.py",
     "backend/models/tradability_score.py",
     "backend/models/tradability_metrics.py",
-    # Consolidated services
-    "backend/services/schwab_service.py",
-    "backend/services/trades_comparison_service.py",
-    # RESTful API routers
+    # API routers
     "backend/api/routers/options_chain.py",
     "backend/api/routers/trades.py",
+    "backend/api/poll.py",
+    # Agents
+    "backend/agents/options_agent.py",
+    "backend/agents/options_data_agent.py",
+    "backend/agents/tradability_agent.py",
+    "backend/agents/workflow.py",
+    # Tests
+    "tests/services/test_schwab_service.py",
+    "tests/services/test_trades_comparison_service.py",
+    # Infrastructure & frontend
     "backend/requirements.txt",
     "frontend/vue-app/.gitkeep",
     "infra/bicep/main.bicep",
@@ -70,76 +82,6 @@ def test_backend_models_is_python_package():
     init_file = os.path.join(REPO_ROOT, "backend", "models", "__init__.py")
     assert os.path.isfile(init_file), (
         "backend/models/__init__.py must be a file to qualify as a Python package"
-    )
-
-
-def test_backend_models_options_contract_exists():
-    module_file = os.path.join(REPO_ROOT, "backend", "models", "options_contract.py")
-    assert os.path.isfile(module_file), (
-        "backend/models/options_contract.py must exist as a dedicated model module"
-    )
-
-
-def test_backend_models_options_chain_request_exists():
-    module_file = os.path.join(REPO_ROOT, "backend", "models", "options_chain_request.py")
-    assert os.path.isfile(module_file), (
-        "backend/models/options_chain_request.py must exist as a dedicated model module"
-    )
-
-
-def test_backend_models_options_chain_response_exists():
-    module_file = os.path.join(REPO_ROOT, "backend", "models", "options_chain_response.py")
-    assert os.path.isfile(module_file), (
-        "backend/models/options_chain_response.py must exist as a dedicated model module"
-    )
-
-
-def test_backend_models_tradability_score_exists():
-    module_file = os.path.join(REPO_ROOT, "backend", "models", "tradability_score.py")
-    assert os.path.isfile(module_file), (
-        "backend/models/tradability_score.py must exist as a dedicated model module"
-    )
-
-
-def test_backend_models_tradability_metrics_exists():
-    module_file = os.path.join(REPO_ROOT, "backend", "models", "tradability_metrics.py")
-    assert os.path.isfile(module_file), (
-        "backend/models/tradability_metrics.py must exist as a dedicated model module"
-    )
-
-
-def test_backend_services_schwab_service_exists():
-    service_file = os.path.join(REPO_ROOT, "backend", "services", "schwab_service.py")
-    assert os.path.isfile(service_file), (
-        "backend/services/schwab_service.py must exist as the consolidated Schwab service"
-    )
-
-
-def test_backend_services_trades_comparison_service_exists():
-    service_file = os.path.join(REPO_ROOT, "backend", "services", "trades_comparison_service.py")
-    assert os.path.isfile(service_file), (
-        "backend/services/trades_comparison_service.py must exist as the consolidated trades comparison service"
-    )
-
-
-def test_backend_api_routers_directory_exists():
-    routers_dir = os.path.join(REPO_ROOT, "backend", "api", "routers")
-    assert os.path.isdir(routers_dir), (
-        "backend/api/routers/ directory must exist for RESTful API routers"
-    )
-
-
-def test_backend_api_routers_options_chain_exists():
-    router_file = os.path.join(REPO_ROOT, "backend", "api", "routers", "options_chain.py")
-    assert os.path.isfile(router_file), (
-        "backend/api/routers/options_chain.py must exist as a RESTful API router"
-    )
-
-
-def test_backend_api_routers_trades_exists():
-    router_file = os.path.join(REPO_ROOT, "backend", "api", "routers", "trades.py")
-    assert os.path.isfile(router_file), (
-        "backend/api/routers/trades.py must exist as a RESTful API router"
     )
 
 
