@@ -1,5 +1,3 @@
-tests/services/test_trades_comparison_service.py
-
 from unittest.mock import MagicMock, patch
 import pytest
 
