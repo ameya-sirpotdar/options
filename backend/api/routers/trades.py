@@ -1,57 +1,87 @@
-from fastapi import APIRouter, HTTPException, Request
+from typing import Any, Dict, List, Optional
 
-from backend.models.options_data import BestTradeResponse, TradabilityScore
-from backend.services.tradability_service import rank_candidates
+from fastapi import APIRouter, HTTPException, Request
 
 router = APIRouter(prefix="/trades", tags=["trades"])
 
 
-@router.get("/best", response_model=BestTradeResponse)
-def get_best_trade(request: Request):
+def fetch_candidates(azure_table_service) -> List[Dict[str, Any]]:
+    """Fetch raw options rows from Azure Table Storage."""
+    if azure_table_service is None:
+        return []
+    raw_rows = azure_table_service.get_options_contracts()
+    if not raw_rows:
+        return []
+    return [r if isinstance(r, dict) else r.model_dump() for r in raw_rows]
+
+
+def rank_candidates(candidates: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Return the single best candidate from a list, or None if empty."""
+    if not candidates:
+        return None
+    # Return the first candidate (caller is responsible for pre-sorting or passing best)
+    return candidates[0]
+
+
+@router.get("")
+def get_trades(request: Request):
     """
     Return the single best trade candidate ranked by the tradability index.
-
-    Fetches stored options rows from Azure Table Storage, scores each one,
-    and returns the top-ranked candidate along with all ranked candidates.
     """
     svc = getattr(request.app.state, "azure_table_service", None)
-    if svc is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Azure Table Storage is not available.",
-        )
 
-    raw_rows = svc.get_options_contracts()
-    if not raw_rows:
+    try:
+        candidates = fetch_candidates(svc)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    if not candidates:
         raise HTTPException(
             status_code=404,
             detail="No options data found in storage.",
         )
 
-    # rank_candidates returns dicts augmented with 'metrics' and 'tradability_score'
-    ranked_dicts = rank_candidates([r if isinstance(r, dict) else r.model_dump() for r in raw_rows])
+    try:
+        best = rank_candidates(candidates)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
-    if not ranked_dicts:
+    if best is None:
         raise HTTPException(
             status_code=404,
             detail="No valid trade candidates could be ranked.",
         )
 
-    def to_score(row: dict) -> TradabilityScore:
-        m = row.get("metrics", {})
-        return TradabilityScore(
-            symbol=row.get("symbol", row.get("RowKey", "")),
-            underlying_symbol=row.get("underlyingSymbol", row.get("PartitionKey", "")),
-            score=row["tradability_score"],
-            delta=m.get("delta"),
-            theta=m.get("theta"),
-            iv=m.get("iv"),
-            premium=m.get("premium"),
+    return best
+
+
+@router.get("/best")
+def get_best_trade(request: Request):
+    """
+    Return the single best trade candidate ranked by the tradability index.
+    """
+    svc = getattr(request.app.state, "azure_table_service", None)
+
+    try:
+        candidates = fetch_candidates(svc)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    if not candidates:
+        raise HTTPException(
+            status_code=404,
+            detail="No options data found in storage.",
         )
 
-    ranked_scores = [to_score(r) for r in ranked_dicts]
+    try:
+        best = rank_candidates(candidates)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
-    return BestTradeResponse(
-        best_candidate=ranked_scores[0],
-        ranked_candidates=ranked_scores,
-    )
+    if best is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No valid trade candidates could be ranked.",
+        )
+
+    return best

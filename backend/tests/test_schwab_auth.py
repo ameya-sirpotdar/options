@@ -2,7 +2,7 @@ import os
 import pytest
 from unittest.mock import MagicMock, patch
 
-from backend.services.schwab_auth import SchwabAuth, _resolve_client_credentials
+from backend.services.schwab_service import SchwabAuth, _resolve_client_credentials
 
 
 class TestSchwabAuthEnvVarFallback:
@@ -75,8 +75,8 @@ class TestSchwabAuthEnvVarFallback:
             os.environ.pop("SCHWAB_CLIENT_ID", None)
             os.environ.pop("SCHWAB_CLIENT_SECRET", None)
 
-            with patch("backend.services.schwab_auth.SecretClient") as mock_sc_cls, \
-                 patch("backend.services.schwab_auth.DefaultAzureCredential"):
+            with patch("backend.services.schwab_service.SecretClient") as mock_sc_cls, \
+                 patch("backend.services.schwab_service.DefaultAzureCredential"):
                 mock_sc_instance = MagicMock()
                 mock_sc_cls.return_value = mock_sc_instance
                 mock_sc_instance.get_secret.return_value = mock_secret
@@ -95,8 +95,8 @@ class TestSchwabAuthEnvVarFallback:
             os.environ.pop("SCHWAB_CLIENT_ID", None)
             os.environ.pop("SCHWAB_CLIENT_SECRET", None)
 
-            with patch("backend.services.schwab_auth.SecretClient") as mock_sc_cls, \
-                 patch("backend.services.schwab_auth.DefaultAzureCredential"):
+            with patch("backend.services.schwab_service.SecretClient") as mock_sc_cls, \
+                 patch("backend.services.schwab_service.DefaultAzureCredential"):
                 mock_sc_instance = MagicMock()
                 mock_sc_cls.return_value = mock_sc_instance
                 mock_sc_instance.get_secret.return_value = mock_secret
@@ -112,8 +112,8 @@ class TestSchwabAuthEnvVarFallback:
             os.environ.pop("SCHWAB_CLIENT_ID", None)
             os.environ.pop("SCHWAB_CLIENT_SECRET", None)
 
-            with patch("backend.services.schwab_auth.SecretClient") as mock_sc_cls, \
-                 patch("backend.services.schwab_auth.DefaultAzureCredential"):
+            with patch("backend.services.schwab_service.SecretClient") as mock_sc_cls, \
+                 patch("backend.services.schwab_service.DefaultAzureCredential"):
                 mock_sc_instance = MagicMock()
                 mock_sc_cls.return_value = mock_sc_instance
                 mock_sc_instance.get_secret.side_effect = Exception("Vault connection refused")
@@ -128,7 +128,7 @@ class TestSchwabAuthEnvVarFallback:
             "SCHWAB_CLIENT_ID": "env_id",
             "SCHWAB_CLIENT_SECRET": "env_secret",
         }
-        with patch("backend.services.schwab_auth.SecretClient") as mock_sc_cls, \
+        with patch("backend.services.schwab_service.SecretClient") as mock_sc_cls, \
              patch.dict(os.environ, env_vars):
             auth = SchwabAuth(vault_url=None)
             auth.get_credentials()
@@ -143,8 +143,8 @@ class TestSchwabAuthEnvVarFallback:
             os.environ.pop("SCHWAB_CLIENT_ID", None)
             os.environ.pop("SCHWAB_CLIENT_SECRET", None)
 
-            with patch("backend.services.schwab_auth.SecretClient") as mock_sc_cls, \
-                 patch("backend.services.schwab_auth.DefaultAzureCredential"):
+            with patch("backend.services.schwab_service.SecretClient") as mock_sc_cls, \
+                 patch("backend.services.schwab_service.DefaultAzureCredential"):
                 mock_sc_instance = MagicMock()
                 mock_sc_cls.return_value = mock_sc_instance
                 mock_sc_instance.get_secret.return_value = mock_secret
@@ -165,8 +165,8 @@ class TestSchwabAuthEnvVarFallback:
             os.environ.pop("SCHWAB_CLIENT_ID", None)
             os.environ.pop("SCHWAB_CLIENT_SECRET", None)
 
-            with patch("backend.services.schwab_auth.SecretClient") as mock_sc_cls, \
-                 patch("backend.services.schwab_auth.DefaultAzureCredential"):
+            with patch("backend.services.schwab_service.SecretClient") as mock_sc_cls, \
+                 patch("backend.services.schwab_service.DefaultAzureCredential"):
                 mock_sc_instance = MagicMock()
                 mock_sc_cls.return_value = mock_sc_instance
                 mock_sc_instance.get_secret.return_value = mock_secret

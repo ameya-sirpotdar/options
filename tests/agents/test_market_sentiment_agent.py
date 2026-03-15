@@ -1,4 +1,3 @@
-tests/agents/test_market_sentiment_agent.py
 from backend.agents.market_sentiment_agent import MarketSentimentAgent
 
 
@@ -31,7 +30,7 @@ def test_run_with_empty_state():
     agent = MarketSentimentAgent()
     state = {}
     result = agent.run(state)
-    assert result == {}
+    assert result == {"market_sentiment": None}
 
 
 def test_run_with_complex_state():

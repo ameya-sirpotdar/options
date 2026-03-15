@@ -16,12 +16,15 @@ from backend.api.routers.health import router as health_router
 from backend.api.routers.options_chain import router as options_chain_router
 from backend.api.routers.trades import router as trades_router
 from backend.services.azure_table_service import AzureTableService
-from backend.services.schwab_client import SchwabClient
-from backend.services.schwab_auth import SchwabAuth
+from backend.services.schwab_service import SchwabService
 
 configure_logging()
 
 logger = logging.getLogger(__name__)
+
+# Module-level references (updated during startup; exposed so tests can patch them)
+azure_table_service = None
+schwab_service = None
 
 app = FastAPI(title="Options Polling API", version="1.0.0")
 
@@ -39,19 +42,21 @@ app.add_middleware(
 app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(health_router)
-app.include_router(poll_router)
 app.include_router(options_chain_router)
 app.include_router(trades_router)
 
 
 @app.on_event("startup")
 async def startup_event() -> None:
+    global azure_table_service, schwab_service
+
     # ── AzureTableService ────────────────────────────────────────────────────
     connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
     if connection_string:
         try:
-            azure_table_service = await asyncio.to_thread(AzureTableService, connection_string=connection_string)
-            app.state.azure_table_service = azure_table_service
+            _ats = await asyncio.to_thread(AzureTableService, connection_string=connection_string)
+            azure_table_service = _ats
+            app.state.azure_table_service = _ats
             logger.info("AzureTableService initialised and attached to app.state")
         except Exception as exc:
             logger.warning(
@@ -65,15 +70,17 @@ async def startup_event() -> None:
         )
         app.state.azure_table_service = None
 
-    # ── SchwabClient ─────────────────────────────────────────────────────────
+    # ── SchwabService ─────────────────────────────────────────────────────────
     try:
         vault_url = os.getenv("AZURE_KEY_VAULT_URL")  # optional
-        schwab_auth = SchwabAuth(vault_url=vault_url)
-        schwab_client = SchwabClient(auth=schwab_auth)
-        app.state.schwab_client = schwab_client
-        logger.info("SchwabClient initialised and attached to app.state")
+        _svc = SchwabService(vault_url=vault_url)
+        schwab_service = _svc
+        app.state.schwab_client = _svc
+        app.state.schwab_service = _svc
+        logger.info("SchwabService initialised and attached to app.state")
     except Exception as exc:
         logger.warning(
-            "SchwabClient could not be initialised at startup: %s", exc
+            "SchwabService could not be initialised at startup: %s", exc
         )
         app.state.schwab_client = None
+        app.state.schwab_service = None

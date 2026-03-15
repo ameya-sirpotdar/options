@@ -6,7 +6,7 @@ from pydantic import BaseModel
 router = APIRouter()
 
 
-class PollOptionsRequest(BaseModel):
+class PollOptionsBody(BaseModel):
     tickers: List[str]
 
 
@@ -44,17 +44,18 @@ def _flatten_chain(ticker: str, chain: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 @router.post("/poll/options")
-async def post_poll_options(http_request: Request, body: PollOptionsRequest):
-    schwab_client = getattr(http_request.app.state, "schwab_client", None)
+async def poll_options(body: PollOptionsBody, request: Request):
+    """Internal endpoint: fetch and flatten options chain for each ticker."""
+    schwab_client = getattr(request.app.state, "schwab_client", None)
     if schwab_client is None:
-        raise HTTPException(status_code=503, detail="Schwab client not available")
+        raise HTTPException(status_code=503, detail="Schwab service not available.")
 
     rows: List[Dict[str, Any]] = []
     try:
         for ticker in body.tickers:
             chain = await schwab_client.get_option_chain(ticker)
             rows.extend(_flatten_chain(ticker, chain))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
     return {"rows": rows}

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from backend.agents.options_agent import run_options_poll
-from backend.models.options_data import OptionsContractRecord
+from backend.models.options_contract import OptionsContractRecord
 from backend.models.run_log import RunLogRecord
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,9 @@ class PollingService:
         except Exception as exc:
             logger.exception("Options poll agent raised an exception: %s", exc)
             error_message = str(exc)
-            # do NOT raise here — fall through to persistence
+            if self._azure_table_service is None:
+                # No persistence layer to record the error — re-raise so callers see the failure
+                raise
 
         if self._azure_table_service is not None:
             contracts: List[OptionsContractRecord] = []
@@ -69,18 +71,22 @@ class PollingService:
                                 if not isinstance(contract, dict):
                                     continue
                                 try:
+                                    symbol_val = contract.get("symbol", underlying_symbol)
+                                    strike_val = contract.get("strikePrice") or 0.0
+                                    expiry_val = contract.get("expirationDate") or ""
                                     record = OptionsContractRecord(
                                         runId=run_id_val,
+                                        symbol=symbol_val,
+                                        contractType=option_type,
+                                        strikePrice=strike_val,
+                                        expirationDate=expiry_val,
                                         underlyingSymbol=underlying_symbol,
-                                        optionType=option_type,
-                                        putCall=contract.get("putCall", option_type),
-                                        symbol=contract.get("symbol", ""),
                                         description=contract.get("description"),
                                         exchangeName=contract.get("exchangeName"),
-                                        bidPrice=contract.get("bid"),
-                                        askPrice=contract.get("ask"),
-                                        lastPrice=contract.get("last"),
-                                        markPrice=contract.get("mark"),
+                                        bid=contract.get("bid"),
+                                        ask=contract.get("ask"),
+                                        last=contract.get("last"),
+                                        mark=contract.get("mark"),
                                         bidSize=contract.get("bidSize"),
                                         askSize=contract.get("askSize"),
                                         lastSize=contract.get("lastSize"),
@@ -89,7 +95,6 @@ class PollingService:
                                         openPrice=contract.get("openPrice"),
                                         closePrice=contract.get("closePrice"),
                                         totalVolume=contract.get("totalVolume"),
-                                        tradeDate=contract.get("tradeDate"),
                                         tradeTimeInLong=contract.get("tradeTimeInLong"),
                                         quoteTimeInLong=contract.get("quoteTimeInLong"),
                                         netChange=contract.get("netChange"),
@@ -103,8 +108,6 @@ class PollingService:
                                         timeValue=contract.get("timeValue"),
                                         theoreticalOptionValue=contract.get("theoreticalOptionValue"),
                                         theoreticalVolatility=contract.get("theoreticalVolatility"),
-                                        strikePrice=contract.get("strikePrice"),
-                                        expirationDate=contract.get("expirationDate"),
                                         daysToExpiration=contract.get("daysToExpiration"),
                                         expirationType=contract.get("expirationType"),
                                         lastTradingDay=contract.get("lastTradingDay"),
@@ -115,7 +118,6 @@ class PollingService:
                                         markChange=contract.get("markChange"),
                                         markPercentChange=contract.get("markPercentChange"),
                                         intrinsicValue=contract.get("intrinsicValue"),
-                                        extrinsicValue=contract.get("extrinsicValue"),
                                         inTheMoney=contract.get("inTheMoney"),
                                         mini=contract.get("mini"),
                                         nonStandard=contract.get("nonStandard"),

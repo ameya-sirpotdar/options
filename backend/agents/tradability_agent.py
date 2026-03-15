@@ -1,43 +1,36 @@
 from backend.agents.state import PipelineState
+from backend.services.trades_comparison_service import TradesComparisonService
 
 __all__ = ["TradabilityAgent"]
 
 
 class TradabilityAgent:
     """
-    Placeholder agent for assessing overall tradability of a given ticker.
+    Agent for assessing overall tradability of a given ticker.
 
-    Intended role in the pipeline:
-        Receives aggregated sentiment scores, options data, and computed
-        metrics from upstream agents and synthesises them into a final
-        tradability score and a human-readable recommendation (e.g.
-        "strong buy", "hold", "avoid").  In the full implementation this
-        node will apply a weighted scoring model and optional LLM
-        reasoning before writing `tradability_score` and `recommendation`
-        back into the shared LangGraph state.
-
-    Current status:
-        Stub — the `run` method returns the state dict unchanged so that
-        the rest of the graph can be wired up and tested end-to-end before
-        the scoring logic is implemented.
+    Delegates to TradesComparisonService.compute_tradability_score and
+    writes ``tradability_score`` into the pipeline state.
     """
+
+    def __init__(self) -> None:
+        self._service = TradesComparisonService()
 
     def run(self, state: PipelineState) -> PipelineState:
         """
         Execute the tradability assessment step.
 
-        Parameters
-        ----------
-        state:
-            The current LangGraph shared state dictionary.
-
-        Returns
-        -------
-        PipelineState
-            The state dictionary, returned unchanged by this stub.
+        Returns a new state dict with ``tradability_score`` populated.
+        The original *state* dict is not mutated.
         """
-        # TODO: implement weighted scoring model and set state['tradability_score']
-        return state
+        result = dict(state)
+        trades = state.get("trades") or []
+        if trades or "tradability_score" in state:
+            try:
+                score = self._service.compute_tradability_score(trades)
+            except Exception:  # noqa: BLE001
+                score = None
+            result["tradability_score"] = score
+        return result
 
     def __call__(self, state: PipelineState) -> PipelineState:
         """Allow the agent to be used directly as a LangGraph node callable."""

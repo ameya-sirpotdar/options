@@ -16,6 +16,11 @@ def make_app(mock_schwab_client=None):
     return app
 
 
+# NOTE: /poll/options is now an internal-only endpoint (hidden from public API).
+# These tests validate the internal polling logic directly via the router,
+# not as a publicly advertised REST surface. The public trades API is GET /trades.
+
+
 SAMPLE_CHAIN_RESPONSE = {
     "symbol": "AAPL",
     "status": "SUCCESS",
@@ -226,6 +231,7 @@ class TestPollOptionsEndpoint:
         assert response.status_code == 503
 
     def test_get_poll_options_not_allowed(self):
+        """GET /poll/options is not a supported method; the endpoint is POST-only and internal."""
         mock_client = MagicMock()
         app = make_app(mock_schwab_client=mock_client)
         client = TestClient(app)

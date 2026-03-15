@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 import pytest
-from backend.services.ccp_calculator import (
+from backend.services.schwab_service import (
     compute_days_to_expiration,
     compute_annualized_roi,
     enrich_put_options_with_roi,
@@ -30,8 +30,9 @@ class TestComputeDaysToExpiration:
         assert result == -5
 
     def test_exactly_one_year_away(self):
-        today = date(2024, 1, 1)
-        expiration = date(2025, 1, 1)
+        # Use a non-leap year span: 2023-01-01 to 2024-01-01 = 365 days
+        today = date(2023, 1, 1)
+        expiration = date(2024, 1, 1)
         result = compute_days_to_expiration(expiration, today=today)
         assert result == 365
 

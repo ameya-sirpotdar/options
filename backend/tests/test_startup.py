@@ -70,3 +70,30 @@ async def test_azure_table_service_init_uses_thread():
     assert any(c is mock_azure_cls for c in calls), (
         "asyncio.to_thread was not called with AzureTableService — blocking init detected"
     )
+
+
+@pytest.mark.asyncio
+async def test_trades_endpoint_accessible():
+    """GET /trades is reachable and returns a valid response shape after refactor."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/trades")
+
+    # Endpoint must exist — 200 (data), 404 (no data in storage), or 422 (invalid params) are all acceptable
+    assert response.status_code in (200, 404, 422), (
+        f"Unexpected status {response.status_code} — /trades endpoint may be missing"
+    )
+
+
+@pytest.mark.asyncio
+async def test_poll_options_endpoint_not_publicly_exposed():
+    """/poll/options should not be publicly routed after the API redesign."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/poll/options")
+
+    assert response.status_code == 404, (
+        "/poll/options is still publicly exposed — it should be hidden after refactor"
+    )

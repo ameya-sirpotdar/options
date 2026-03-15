@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import { pollOptions, calculateTrades } from '../api/endpoints.js'
+import { getTrades } from '../api/endpoints.js'
 
 export function useMarketData() {
   const delta = ref(0.30)
@@ -10,9 +10,7 @@ export function useMarketData() {
   const options = ref([])
   const bestTrade = ref(null)
   const isPolling = ref(false)
-  const isCalculating = ref(false)
-  const pollError = ref(null)
-  const calcError = ref(null)
+  const error = ref(null)
 
   const hasOptions = computed(() => options.value.length > 0)
 
@@ -33,17 +31,17 @@ export function useMarketData() {
     }
     return Array.from(map.values())
   })
+
   const hasBestTrade = computed(() => bestTrade.value !== null)
   const canPoll = computed(
     () => expiry.value !== '' && tickers.value.length > 0 && !isPolling.value
   )
-  const canCalculate = computed(() => hasOptions.value && !isCalculating.value)
 
   async function fetchMarketData() {
     if (!canPoll.value) return
 
     isPolling.value = true
-    pollError.value = null
+    error.value = null
     options.value = []
     vix.value = null
     bestTrade.value = null
@@ -54,48 +52,34 @@ export function useMarketData() {
         .split(',')
         .map(t => t.trim())
         .filter(Boolean)
-      const response = await pollOptions({
+
+      // GET /trades returns a flat list of trade objects with tradability scores
+      const trades = await getTrades({
         tickers: tickerArray,
         delta: delta.value,
         expiry: expiry.value,
       })
 
-      // Backend returns { rows: [...], vix: number }
-      options.value = response.rows ?? response.options ?? []
-      vix.value = response.vix ?? null
+      options.value = Array.isArray(trades) ? trades : []
+
+      // Derive vix from the first trade entry if available
+      vix.value = options.value.length > 0 ? (options.value[0].vix ?? null) : null
+
+      // Best trade is the entry with the highest tradability score
+      if (options.value.length > 0) {
+        bestTrade.value = options.value.reduce((best, trade) => {
+          const bestScore = best?.tradability_score ?? -Infinity
+          const tradeScore = trade?.tradability_score ?? -Infinity
+          return tradeScore > bestScore ? trade : best
+        }, null)
+      }
     } catch (err) {
-      pollError.value =
+      error.value =
         err?.response?.data?.detail ??
         err?.message ??
         'Failed to fetch market data.'
     } finally {
       isPolling.value = false
-    }
-  }
-
-  async function fetchBestTrade() {
-    if (!canCalculate.value) return
-
-    isCalculating.value = true
-    calcError.value = null
-    bestTrade.value = null
-
-    try {
-      const response = await calculateTrades({
-        delta: delta.value,
-        expiry: expiry.value,
-        options: options.value,
-        vix: vix.value,
-      })
-
-      bestTrade.value = response.best_trade ?? response ?? null
-    } catch (err) {
-      calcError.value =
-        err?.response?.data?.detail ??
-        err?.message ??
-        'Failed to calculate trades.'
-    } finally {
-      isCalculating.value = false
     }
   }
 
@@ -107,10 +91,8 @@ export function useMarketData() {
     vix.value = null
     options.value = []
     bestTrade.value = null
-    pollError.value = null
-    calcError.value = null
+    error.value = null
     isPolling.value = false
-    isCalculating.value = false
   }
 
   return {
@@ -124,15 +106,11 @@ export function useMarketData() {
     straddleRows,
     bestTrade,
     isPolling,
-    isCalculating,
-    pollError,
-    calcError,
+    error,
     hasOptions,
     hasBestTrade,
     canPoll,
-    canCalculate,
     fetchMarketData,
-    fetchBestTrade,
     resetAll,
   }
 }

@@ -1,73 +1,73 @@
 <template>
-  <section class="best-trade-card" aria-label="Best Trade Candidate">
-    <h2 class="card-title">Best Trade Candidate</h2>
+  <section class="best-trade-card trade-card" aria-label="Best Trade Candidate" data-testid="trade-card">
+    <h2 class="card-title" data-testid="trade-title">Best Trade Candidate</h2>
 
-    <div v-if="!trade" class="empty-state">
+    <div v-if="!trade" class="empty-state" data-testid="trade-empty">
       <p class="empty-message">No trade calculated yet. Poll market data and click Calculate Trades.</p>
     </div>
 
-    <div v-else class="trade-details">
+    <div v-else class="trade-details" data-testid="trade-content">
       <div class="trade-grid">
         <div class="trade-field">
           <span class="field-label">Symbol</span>
-          <span class="field-value symbol">{{ trade.symbol }}</span>
+          <span class="field-value symbol" data-testid="trade-symbol">{{ trade.symbol }}</span>
         </div>
 
         <div class="trade-field">
           <span class="field-label">Strike</span>
-          <span class="field-value strike">${{ formatNumber(trade.strike) }}</span>
+          <span class="field-value strike" data-testid="trade-strike">${{ formatNumber(trade.strike) }}</span>
         </div>
 
         <div class="trade-field">
           <span class="field-label">Expiry</span>
-          <span class="field-value expiry">{{ trade.expiry }}</span>
+          <span class="field-value expiry" data-testid="trade-expiry">{{ trade.expiry }}</span>
         </div>
 
         <div class="trade-field">
           <span class="field-label">Option Type</span>
-          <span class="field-value option-type" :class="optionTypeClass">
+          <span class="field-value option-type" :class="optionTypeClass" data-testid="trade-option-type">
             {{ trade.option_type ? trade.option_type.toUpperCase() : '—' }}
           </span>
         </div>
 
         <div class="trade-field">
           <span class="field-label">Delta</span>
-          <span class="field-value delta">{{ formatDelta(trade.delta) }}</span>
+          <span class="field-value delta" data-testid="trade-delta">{{ formatDelta(trade.delta) }}</span>
         </div>
 
         <div class="trade-field">
           <span class="field-label">Premium</span>
-          <span class="field-value premium">${{ formatNumber(trade.premium) }}</span>
+          <span class="field-value premium" data-testid="trade-premium">${{ formatNumber(trade.premium) }}</span>
         </div>
 
         <div class="trade-field">
           <span class="field-label">Bid</span>
-          <span class="field-value bid">${{ formatNumber(trade.bid) }}</span>
+          <span class="field-value bid" data-testid="trade-bid">${{ formatNumber(trade.bid) }}</span>
         </div>
 
         <div class="trade-field">
           <span class="field-label">Ask</span>
-          <span class="field-value ask">${{ formatNumber(trade.ask) }}</span>
+          <span class="field-value ask" data-testid="trade-ask">${{ formatNumber(trade.ask) }}</span>
         </div>
 
         <div class="trade-field">
           <span class="field-label">Implied Volatility</span>
-          <span class="field-value iv">{{ formatPercent(trade.implied_volatility) }}</span>
+          <span class="field-value iv" data-testid="trade-iv">{{ formatPercent(trade.implied_volatility) }}</span>
         </div>
 
         <div class="trade-field">
           <span class="field-label">Volume</span>
-          <span class="field-value volume">{{ formatInteger(trade.volume) }}</span>
+          <span class="field-value volume" data-testid="trade-volume">{{ formatInteger(trade.volume) }}</span>
         </div>
 
         <div class="trade-field">
           <span class="field-label">Open Interest</span>
-          <span class="field-value open-interest">{{ formatInteger(trade.open_interest) }}</span>
+          <span class="field-value open-interest" data-testid="trade-open-interest">{{ formatInteger(trade.open_interest) }}</span>
         </div>
 
-        <div class="trade-field score-field" v-if="trade.score !== undefined && trade.score !== null">
+        <div class="trade-field score-field" v-if="tradabilityScore !== null">
           <span class="field-label">Score</span>
-          <span class="field-value score">{{ formatNumber(trade.score) }}</span>
+          <span class="field-value score" data-testid="trade-score">{{ formatNumber(tradabilityScore) }}</span>
         </div>
       </div>
 
@@ -83,15 +83,54 @@
 import { computed } from 'vue'
 
 const props = defineProps({
+  /**
+   * Accepts either:
+   *   - a single trade object (legacy), or
+   *   - an array of trade objects as returned by GET /trades
+   * When an array is supplied the first element (highest score) is displayed.
+   */
   trade: {
-    type: Object,
+    type: [Object, Array],
     default: null
   }
 })
 
+/** Resolve the single best trade regardless of whether a list or object was passed. */
+const bestTrade = computed(() => {
+  if (!props.trade) return null
+  if (Array.isArray(props.trade)) {
+    return props.trade.length > 0 ? props.trade[0] : null
+  }
+  return props.trade
+})
+
+/**
+ * Extract the numeric score from the new nested `tradability_score` object,
+ * falling back to a top-level `score` field for backwards compatibility.
+ */
+const tradabilityScore = computed(() => {
+  if (!bestTrade.value) return null
+  if (
+    bestTrade.value.tradability_score !== undefined &&
+    bestTrade.value.tradability_score !== null
+  ) {
+    // New shape: { tradability_score: { score: 0.87, ... } }
+    if (
+      typeof bestTrade.value.tradability_score === 'object' &&
+      bestTrade.value.tradability_score.score !== undefined
+    ) {
+      return bestTrade.value.tradability_score.score
+    }
+    // Flat numeric value on the key
+    return bestTrade.value.tradability_score
+  }
+  // Legacy shape: { score: 0.87 }
+  return bestTrade.value.score ?? null
+})
+
 const optionTypeClass = computed(() => {
-  if (!props.trade?.option_type) return ''
-  return props.trade.option_type.toLowerCase() === 'call' ? 'type-call' : 'type-put'
+  if (!bestTrade.value?.option_type) return ''
+  return bestTrade.value.option_type.toLowerCase() === 'call' ? 'type-call' : 'type-put'
 })
 
 function formatNumber(value) {
