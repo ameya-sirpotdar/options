@@ -1,6 +1,4 @@
 from backend.agents.state import PipelineState
-from backend.models.tradability_score import TradabilityScore
-from backend.models.tradability_metrics import TradabilityMetrics
 
 __all__ = ["TradabilityAgent"]
 
