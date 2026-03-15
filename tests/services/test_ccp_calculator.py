@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 import pytest
-from backend.services.trades_comparison_service import (
+from backend.services.ccp_calculator import (
     compute_days_to_expiration,
     compute_annualized_roi,
     enrich_put_options_with_roi,
