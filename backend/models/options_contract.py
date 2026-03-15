@@ -1,10 +1,10 @@
-backend/models/options_contract.py
 from pydantic import BaseModel
-from typing import Optional
+from typing import Literal, Optional
 
 
 class OptionsContract(BaseModel):
     symbol: str
+    option_type: Optional[Literal['call', 'put', 'CALL', 'PUT']] = None
     description: Optional[str] = None
     exchange_name: Optional[str] = None
     bid: Optional[float] = None
