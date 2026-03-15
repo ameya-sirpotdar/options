@@ -1,5 +1,5 @@
 from backend.agents.state import PipelineState
-from backend.services.schwab_service import enrich_put_options_with_roi
+from backend.services.trades_comparison_service import enrich_put_options_with_roi
 
 __all__ = ["OptionsDataAgent"]
 
