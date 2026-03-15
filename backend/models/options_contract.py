@@ -1,10 +1,11 @@
+backend/models/options_contract.py
+
 from pydantic import BaseModel
-from typing import Literal, Optional
+from typing import Optional
 
 
 class OptionsContract(BaseModel):
     symbol: str
-    option_type: Optional[Literal['call', 'put', 'CALL', 'PUT']] = None
     description: Optional[str] = None
     exchange_name: Optional[str] = None
     bid: Optional[float] = None
@@ -22,6 +23,7 @@ class OptionsContract(BaseModel):
     total_volume: Optional[int] = None
     trade_date: Optional[int] = None
     quote_time_in_long: Optional[int] = None
+    trade_time_in_long: Optional[int] = None
     net_change: Optional[float] = None
     volatility: Optional[float] = None
     delta: Optional[float] = None
@@ -45,12 +47,6 @@ class OptionsContract(BaseModel):
     mark_change: Optional[float] = None
     mark_percent_change: Optional[float] = None
     intrinsic_value: Optional[float] = None
-    extrinsic_value: Optional[float] = None
-    option_root: Optional[str] = None
-    exercise_type: Optional[str] = None
-    high_52_week: Optional[float] = None
-    low_52_week: Optional[float] = None
-    status: Optional[str] = None
     in_the_money: Optional[bool] = None
     non_standard: Optional[bool] = None
     mini: Optional[bool] = None
