@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from backend import config
-from backend.services.schwab_service import SchwabService
+from backend.services.schwab_service import flatten_chain as _flatten_chain
 
 router = APIRouter()
 
@@ -39,16 +39,15 @@ async def get_options_chain(
     delta: float = Query(default=0.30),
     expiry: Optional[str] = Query(default=None),
 ):
-    schwab_service: SchwabService = getattr(http_request.app.state, "schwab_service", None)
-    if schwab_service is None:
-        raise HTTPException(status_code=503, detail="Schwab service not available")
+    schwab_client = getattr(http_request.app.state, "schwab_client", None)
+    if schwab_client is None:
+        raise HTTPException(status_code=503, detail="Schwab client not available")
 
     rows: List[Dict[str, Any]] = []
     try:
         for ticker in tickers:
-            flat = await schwab_service.get_options_chain(
-                ticker, from_date=expiry, to_date=expiry
-            )
+            chain = await schwab_client.get_option_chain(ticker, from_date=expiry, to_date=expiry)
+            flat = _flatten_chain(ticker, chain)
             for row in flat:
                 delta_val = row.get("delta")
                 if delta_val is not None and abs(abs(delta_val) - delta) > config.DELTA_TOLERANCE:
