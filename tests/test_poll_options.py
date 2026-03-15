@@ -341,20 +341,6 @@ class TestPersistenceIntegration:
 
 
 # ---------------------------------------------------------------------------
-# /poll/options endpoint removed from public API
-# ---------------------------------------------------------------------------
-
-class TestPollOptionsEndpointRemoved:
-    def test_poll_options_endpoint_not_found(self):
-        response = client.get("/poll/options", params=make_query_params(["AAPL"]))
-        assert response.status_code == 404
-
-    def test_poll_options_post_not_found(self):
-        response = client.post("/poll/options", json={"tickers": ["AAPL"]})
-        assert response.status_code == 404
-
-
-# ---------------------------------------------------------------------------
 # Response structure
 # ---------------------------------------------------------------------------
 
