@@ -28,8 +28,9 @@ class OptionsChainRequest(BaseModel):
         default=None,
         description="Specific strike price to filter by",
     )
-    range: Optional[str] = Field(
+    strike_range: Optional[str] = Field(
         default="ALL",
+        alias="range",
         description="Range of strikes: ITM, NTM, OTM, SAK, SBK, SNK, or ALL",
     )
     from_date: Optional[str] = Field(
