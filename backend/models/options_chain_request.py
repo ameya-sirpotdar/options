@@ -1,25 +1,20 @@
-backend/models/options_chain_request.py
 from pydantic import BaseModel, Field
 from typing import Optional
 
 
 class OptionsChainRequest(BaseModel):
     symbol: str = Field(..., description="The ticker symbol for the underlying asset")
-    contract_type: Optional[str] = Field(
-        default="ALL",
-        description="Type of contracts to retrieve: CALL, PUT, or ALL",
-    )
     strike_count: Optional[int] = Field(
         default=10,
         description="Number of strikes to return above and below the at-the-money price",
     )
-    include_underlying_quote: Optional[bool] = Field(
-        default=True,
-        description="Whether to include a quote for the underlying asset",
+    include_quotes: Optional[bool] = Field(
+        default=False,
+        description="Whether to include real-time quotes in the response",
     )
     strategy: Optional[str] = Field(
         default="SINGLE",
-        description="Options strategy type (e.g., SINGLE, COVERED, VERTICAL, etc.)",
+        description="Option strategy type (e.g., SINGLE, COVERED, VERTICAL, etc.)",
     )
     interval: Optional[float] = Field(
         default=None,
@@ -30,8 +25,8 @@ class OptionsChainRequest(BaseModel):
         description="Specific strike price to filter by",
     )
     range: Optional[str] = Field(
-        default="ALL",
-        description="Range of strikes to return: ITM, NTM, OTM, SAK, SBK, SNK, ALL",
+        default=None,
+        description="Range of strikes to return (ITM, NTM, OTM, SAK, SBK, SNK, ALL)",
     )
     from_date: Optional[str] = Field(
         default=None,
@@ -58,17 +53,25 @@ class OptionsChainRequest(BaseModel):
         description="Days to expiration to use in calculations",
     )
     exp_month: Optional[str] = Field(
-        default="ALL",
-        description="Expiration month to filter by (e.g., JAN, FEB, ..., ALL)",
+        default=None,
+        description="Expiration month filter (e.g., JAN, FEB, ..., ALL)",
     )
     option_type: Optional[str] = Field(
         default=None,
-        description="Option type: S (Standard), NS (Non-Standard), ALL",
+        description="Option type filter (CALL, PUT, ALL)",
     )
     entitlement: Optional[str] = Field(
         default=None,
-        description="Entitlement type for the request",
+        description="Entitlement type for real-time data (PN, NP, PP)",
     )
 
     class Config:
-        populate_by_name = True
+        json_schema_extra = {
+            "example": {
+                "symbol": "AAPL",
+                "strike_count": 10,
+                "include_quotes": False,
+                "strategy": "SINGLE",
+                "option_type": "ALL",
+            }
+        }
