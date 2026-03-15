@@ -605,3 +605,8 @@ class TestEdgeCases:
         assert callable(service.calculate_ccp)
         assert callable(service.calculate_liquidity_score)
         assert callable(service.compare_contracts)
+
+    def test_score_contract_with_empty_dict(self, service):
+        result = service.score_contract({})
+        assert isinstance(result, dict)
+        assert "score" in result
