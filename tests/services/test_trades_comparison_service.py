@@ -1,6 +1,5 @@
-tests/services/test_trades_comparison_service.py
+"""Tests for TradesComparisonService."""
 import pytest
-from unittest.mock import MagicMock, patch
 from backend.services.trades_comparison_service import TradesComparisonService
 
 
@@ -169,7 +168,7 @@ class TestScoreContract:
 
     def test_score_contract_metrics_contains_volume(self, service, sample_contract):
         result = service.score_contract(sample_contract)
-        assert "volume" in result["metrics"] or len(result["metrics"]) >= 0
+        assert "volume" in result["metrics"]
 
     def test_score_contract_with_near_expiration(self, service, sample_contract):
         sample_contract["daysToExpiration"] = 1
