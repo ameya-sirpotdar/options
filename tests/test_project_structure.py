@@ -11,30 +11,29 @@ EXPECTED_PATHS = [
     "backend/agents/__init__.py",
     "backend/services/__init__.py",
     "backend/models/__init__.py",
-    # Consolidated service files
+    # Backend entry point
+    "backend/main.py",
+    "backend/requirements.txt",
+    # Consolidated services
     "backend/services/schwab_service.py",
     "backend/services/trades_comparison_service.py",
     "backend/services/polling_service.py",
-    # Split model files (one model per file)
+    # Per-file models
     "backend/models/options_contract.py",
     "backend/models/options_chain_request.py",
     "backend/models/options_chain_response.py",
     "backend/models/tradability_score.py",
     "backend/models/tradability_metrics.py",
     # API routers
-    "backend/api/routers/options_chain.py",
     "backend/api/routers/trades.py",
+    "backend/api/routers/options_chain.py",
     "backend/api/poll.py",
     # Agents
     "backend/agents/options_agent.py",
     "backend/agents/options_data_agent.py",
     "backend/agents/tradability_agent.py",
     "backend/agents/workflow.py",
-    # Tests
-    "tests/services/test_schwab_service.py",
-    "tests/services/test_trades_comparison_service.py",
-    # Infrastructure & frontend
-    "backend/requirements.txt",
+    # Infrastructure
     "frontend/vue-app/.gitkeep",
     "infra/bicep/main.bicep",
     "infra/bicep/main.bicepparam.example",
@@ -45,7 +44,19 @@ EXPECTED_PATHS = [
     "infra/k8s/deployment.yaml",
     "infra/k8s/service.yaml",
     "backend/Dockerfile",
+    # Tests
     "tests/test_project_structure.py",
+    "tests/test_trades_router.py",
+    "tests/test_poll_options.py",
+    "tests/test_options_data_model.py",
+    "tests/services/test_schwab_auth.py",
+    "tests/services/test_schwab_filters.py",
+    "tests/services/test_schwab_market_data.py",
+    "tests/services/test_tradability_service.py",
+    "tests/services/test_ccp_calculator.py",
+    "tests/services/test_market_data_service.py",
+    "tests/agents/test_options_data_agent.py",
+    "tests/agents/test_tradability_agent.py",
 ]
 
 
