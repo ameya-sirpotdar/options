@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from backend.models.tradability_score import TradabilityScore
 from backend.models.options_chain_response import BestTradeResponse
-from backend.services.trades_comparison_service import TradesComparisonService
+from backend.services.trades_comparison_service import rank_candidates
 
 router = APIRouter(prefix="/trades", tags=["trades"])
 
@@ -30,7 +30,6 @@ def get_best_trade(request: Request):
         )
 
     # rank_candidates returns dicts augmented with 'metrics' and 'tradability_score'
-    rank_candidates = TradesComparisonService().rank_candidates
     ranked_dicts = rank_candidates([r if isinstance(r, dict) else r.model_dump() for r in raw_rows])
 
     if not ranked_dicts:
