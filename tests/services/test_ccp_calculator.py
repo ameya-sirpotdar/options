@@ -30,8 +30,9 @@ class TestComputeDaysToExpiration:
         assert result == -5
 
     def test_exactly_one_year_away(self):
-        today = date(2024, 1, 1)
-        expiration = date(2025, 1, 1)
+        # Use a non-leap year span: 2023-01-01 to 2024-01-01 = 365 days
+        today = date(2023, 1, 1)
+        expiration = date(2024, 1, 1)
         result = compute_days_to_expiration(expiration, today=today)
         assert result == 365
 

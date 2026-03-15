@@ -1,8 +1,13 @@
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.main import app
+
+# Set up a module-level mock schwab_client so the endpoint doesn't return 503.
+# The startup event does NOT run for a module-level TestClient, so we set it manually.
+_mock_schwab_client = MagicMock()
+app.state.schwab_client = _mock_schwab_client
 
 client = TestClient(app)
 
@@ -15,14 +20,55 @@ def make_query_params(tickers):
     return [("tickers", ticker) for ticker in tickers]
 
 
-def mock_agent_result(tickers):
+def make_sample_chain(ticker):
+    """Return a minimal Schwab-format options chain for a ticker."""
     return {
-        ticker: {
-            "ticker": ticker,
-            "calls": [{"strike": 100.0, "expiry": "2024-12-20", "premium": 2.5}],
-            "puts": [{"strike": 95.0, "expiry": "2024-12-20", "premium": 1.8}],
-        }
-        for ticker in tickers
+        "symbol": ticker,
+        "underlyingPrice": 100.0,
+        "callExpDateMap": {
+            "2024-12-20:30": {
+                "100.0": [
+                    {
+                        "strikePrice": 100.0,
+                        "expirationDate": "2024-12-20",
+                        "bid": 2.5,
+                        "ask": 2.6,
+                        "last": 2.55,
+                        "volume": 500,
+                        "openInterest": 2000,
+                        "delta": 0.5,
+                        "gamma": 0.02,
+                        "theta": -0.04,
+                        "vega": 0.1,
+                        "impliedVolatility": 0.25,
+                        "inTheMoney": True,
+                        "putCall": "CALL",
+                    }
+                ]
+            }
+        },
+        "putExpDateMap": {
+            "2024-12-20:30": {
+                "95.0": [
+                    {
+                        "strikePrice": 95.0,
+                        "expirationDate": "2024-12-20",
+                        "bid": 1.8,
+                        "ask": 1.9,
+                        "last": 1.85,
+                        "volume": 300,
+                        "openInterest": 1500,
+                        "delta": -0.3,
+                        "gamma": 0.02,
+                        "theta": -0.03,
+                        "vega": 0.08,
+                        "impliedVolatility": 0.22,
+                        "inTheMoney": False,
+                        "putCall": "PUT",
+                    }
+                ]
+            }
+        },
     }
 
 
@@ -51,91 +97,57 @@ class TestHealthCheck:
 # ---------------------------------------------------------------------------
 
 class TestPollOptionsHappyPath:
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_single_ticker_returns_200(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_single_ticker_returns_200(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         response = client.get("/options-chain", params=make_query_params(["AAPL"]))
         assert response.status_code == 200
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_single_ticker_response_contains_results(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_single_ticker_response_contains_rows(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         response = client.get("/options-chain", params=make_query_params(["AAPL"]))
         data = response.json()
-        assert "results" in data
+        assert "rows" in data
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_single_ticker_result_key_matches_ticker(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_single_ticker_response_contains_vix(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         response = client.get("/options-chain", params=make_query_params(["AAPL"]))
         data = response.json()
-        assert "AAPL" in data["results"]
+        assert "vix" in data
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_multiple_tickers_all_present_in_results(self, mock_run):
-        tickers = ["AAPL", "MSFT", "GOOG"]
-        mock_run.return_value = mock_agent_result(tickers)
+    def test_single_ticker_rows_not_empty(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
+        response = client.get("/options-chain", params=make_query_params(["AAPL"]))
+        data = response.json()
+        assert len(data["rows"]) > 0
+
+    def test_multiple_tickers_all_present_in_rows(self):
+        tickers = ["AAPL", "MSFT"]
+
+        async def mock_chain(ticker, **kwargs):
+            return make_sample_chain(ticker)
+
+        _mock_schwab_client.get_option_chain = mock_chain
         response = client.get("/options-chain", params=make_query_params(tickers))
         data = response.json()
+        row_tickers = {r["ticker"] for r in data["rows"]}
         for ticker in tickers:
-            assert ticker in data["results"]
+            assert ticker in row_tickers
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_response_includes_tickers_field(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
-        response = client.get("/options-chain", params=make_query_params(["AAPL"]))
-        data = response.json()
-        assert "tickers" in data
-
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_response_tickers_field_matches_input(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
-        response = client.get("/options-chain", params=make_query_params(["AAPL"]))
-        data = response.json()
-        assert "AAPL" in data["tickers"]
-
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_agent_called_with_normalised_tickers(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
-        client.get("/options-chain", params=make_query_params(["aapl"]))
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args[0][0]
-        assert "AAPL" in call_args
-
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_ten_tickers_accepted(self, mock_run):
+    def test_ten_tickers_accepted(self):
         tickers = ["T" + str(i) for i in range(10)]
-        mock_run.return_value = mock_agent_result(tickers)
+
+        async def mock_chain(ticker, **kwargs):
+            return make_sample_chain(ticker)
+
+        _mock_schwab_client.get_option_chain = mock_chain
         response = client.get("/options-chain", params=make_query_params(tickers))
         assert response.status_code == 200
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_response_includes_run_id(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
-        response = client.get("/options-chain", params=make_query_params(["AAPL"]))
-        data = response.json()
-        assert "run_id" in data
-
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_run_id_is_string(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
-        response = client.get("/options-chain", params=make_query_params(["AAPL"]))
-        data = response.json()
-        assert isinstance(data["run_id"], str)
-
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_run_id_is_non_empty(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
-        response = client.get("/options-chain", params=make_query_params(["AAPL"]))
-        data = response.json()
-        assert len(data["run_id"]) > 0
-
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_two_requests_produce_different_run_ids(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
-        r1 = client.get("/options-chain", params=make_query_params(["AAPL"]))
-        r2 = client.get("/options-chain", params=make_query_params(["AAPL"]))
-        assert r1.json()["run_id"] != r2.json()["run_id"]
+    def test_client_called_for_each_ticker(self):
+        tickers = ["AAPL", "MSFT"]
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
+        client.get("/options-chain", params=make_query_params(tickers))
+        assert _mock_schwab_client.get_option_chain.call_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -143,34 +155,29 @@ class TestPollOptionsHappyPath:
 # ---------------------------------------------------------------------------
 
 class TestUppercaseNormalisation:
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_lowercase_ticker_normalised_to_uppercase(self, mock_run):
-        mock_run.return_value = mock_agent_result(["MSFT"])
+    def test_lowercase_ticker_normalised_to_uppercase(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("MSFT"))
         response = client.get("/options-chain", params=make_query_params(["msft"]))
         data = response.json()
-        assert "MSFT" in data["results"]
+        assert any(r["ticker"] == "MSFT" for r in data["rows"])
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_mixed_case_ticker_normalised(self, mock_run):
-        mock_run.return_value = mock_agent_result(["GOOG"])
+    def test_mixed_case_ticker_normalised(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("GOOG"))
         response = client.get("/options-chain", params=make_query_params(["GoOg"]))
         data = response.json()
-        assert "GOOG" in data["results"]
+        assert any(r["ticker"] == "GOOG" for r in data["rows"])
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_already_uppercase_ticker_unchanged(self, mock_run):
-        mock_run.return_value = mock_agent_result(["TSLA"])
+    def test_already_uppercase_ticker_unchanged(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("TSLA"))
         response = client.get("/options-chain", params=make_query_params(["TSLA"]))
         data = response.json()
-        assert "TSLA" in data["results"]
+        assert any(r["ticker"] == "TSLA" for r in data["rows"])
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_normalised_ticker_passed_to_agent(self, mock_run):
-        mock_run.return_value = mock_agent_result(["NVDA"])
+    def test_normalised_ticker_passed_to_client(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("NVDA"))
         client.get("/options-chain", params=make_query_params(["nvda"]))
-        call_args = mock_run.call_args[0][0]
-        assert "NVDA" in call_args
-        assert "nvda" not in call_args
+        call_args = _mock_schwab_client.get_option_chain.call_args[0][0]
+        assert call_args == "NVDA"
 
 
 # ---------------------------------------------------------------------------
@@ -178,24 +185,21 @@ class TestUppercaseNormalisation:
 # ---------------------------------------------------------------------------
 
 class TestWhitespaceHandling:
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_ticker_with_leading_whitespace_stripped(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_ticker_with_leading_whitespace_stripped(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         response = client.get("/options-chain", params=make_query_params(["  AAPL"]))
         assert response.status_code == 200
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_ticker_with_trailing_whitespace_stripped(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_ticker_with_trailing_whitespace_stripped(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         response = client.get("/options-chain", params=make_query_params(["AAPL  "]))
         assert response.status_code == 200
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_stripped_ticker_present_in_results(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_stripped_ticker_present_in_rows(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         response = client.get("/options-chain", params=make_query_params(["  AAPL  "]))
         data = response.json()
-        assert "AAPL" in data["results"]
+        assert any(r["ticker"] == "AAPL" for r in data["rows"])
 
     def test_ticker_that_is_only_whitespace_rejected(self):
         response = client.get("/options-chain", params=make_query_params(["   "]))
@@ -211,29 +215,24 @@ class TestWhitespaceHandling:
 # ---------------------------------------------------------------------------
 
 class TestDuplicateTickers:
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_duplicate_tickers_deduplicated(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_duplicate_tickers_deduplicated(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         client.get("/options-chain", params=make_query_params(["AAPL", "AAPL"]))
-        call_args = mock_run.call_args[0][0]
-        assert call_args.count("AAPL") == 1
+        assert _mock_schwab_client.get_option_chain.call_count == 1
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_duplicate_case_insensitive_deduplicated(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_duplicate_case_insensitive_deduplicated(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         client.get("/options-chain", params=make_query_params(["AAPL", "aapl"]))
-        call_args = mock_run.call_args[0][0]
-        assert len(call_args) == 1
+        assert _mock_schwab_client.get_option_chain.call_count == 1
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_duplicates_do_not_cause_error(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_duplicates_do_not_cause_error(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         response = client.get("/options-chain", params=make_query_params(["AAPL", "AAPL", "AAPL"]))
         assert response.status_code == 200
 
 
 # ---------------------------------------------------------------------------
-# Validation errors – empty / missing tickers
+# Validation errors
 # ---------------------------------------------------------------------------
 
 class TestValidationErrors:
@@ -248,9 +247,8 @@ class TestValidationErrors:
 
     def test_ticker_at_max_length_accepted(self):
         ticker_10 = "A" * 10
-        with patch("backend.services.polling_service.run_options_poll") as mock_run:
-            mock_run.return_value = mock_agent_result([ticker_10])
-            response = client.get("/options-chain", params=make_query_params([ticker_10]))
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain(ticker_10))
+        response = client.get("/options-chain", params=make_query_params([ticker_10]))
         assert response.status_code == 200
 
     def test_validation_error_response_has_detail_field(self):
@@ -265,78 +263,30 @@ class TestValidationErrors:
 
 
 # ---------------------------------------------------------------------------
-# Agent / service failure
+# Schwab service failure
 # ---------------------------------------------------------------------------
 
-class TestAgentFailure:
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_agent_exception_returns_500(self, mock_run):
-        mock_run.side_effect = Exception("agent exploded")
+class TestSchwabFailure:
+    def test_schwab_exception_returns_500(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(side_effect=Exception("API down"))
         response = client.get("/options-chain", params=make_query_params(["AAPL"]))
         assert response.status_code == 500
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_agent_exception_response_has_detail(self, mock_run):
-        mock_run.side_effect = Exception("agent exploded")
+    def test_schwab_exception_response_has_detail(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(side_effect=Exception("API down"))
         response = client.get("/options-chain", params=make_query_params(["AAPL"]))
         data = response.json()
         assert "detail" in data
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_agent_returns_empty_dict_handled_gracefully(self, mock_run):
-        mock_run.return_value = {}
+    def test_schwab_returns_empty_chain_returns_empty_rows(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value={})
         response = client.get("/options-chain", params=make_query_params(["AAPL"]))
         assert response.status_code == 200
+        assert response.json()["rows"] == []
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_agent_returns_partial_results(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
-        response = client.get("/options-chain", params=make_query_params(["AAPL", "MSFT"]))
-        assert response.status_code == 200
-
-
-# ---------------------------------------------------------------------------
-# Persistence – AzureTableService integration
-# ---------------------------------------------------------------------------
-
-class TestPersistenceIntegration:
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_persistence_failure_does_not_crash_poll(self, mock_run):
-        """Storage errors must be swallowed; the HTTP response must still be 200."""
-        mock_run.return_value = mock_agent_result(["AAPL"])
-        with patch("backend.main.azure_table_service") as mock_svc:
-            mock_svc.upsert_options_contracts.side_effect = Exception("storage unavailable")
-            mock_svc.upsert_run_log.side_effect = Exception("storage unavailable")
-            response = client.get("/options-chain", params=make_query_params(["AAPL"]))
-        assert response.status_code == 200
-
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_persistence_failure_still_returns_results(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
-        with patch("backend.main.azure_table_service") as mock_svc:
-            mock_svc.upsert_options_contracts.side_effect = Exception("storage unavailable")
-            mock_svc.upsert_run_log.side_effect = Exception("storage unavailable")
-            response = client.get("/options-chain", params=make_query_params(["AAPL"]))
-        data = response.json()
-        assert "results" in data
-        assert "AAPL" in data["results"]
-
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_persistence_failure_still_returns_run_id(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
-        with patch("backend.main.azure_table_service") as mock_svc:
-            mock_svc.upsert_options_contracts.side_effect = Exception("storage unavailable")
-            mock_svc.upsert_run_log.side_effect = Exception("storage unavailable")
-            response = client.get("/options-chain", params=make_query_params(["AAPL"]))
-        data = response.json()
-        assert "run_id" in data
-
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_none_azure_service_does_not_crash_poll(self, mock_run):
-        """If azure_table_service is None (not configured), poll must still succeed."""
-        mock_run.return_value = mock_agent_result(["AAPL"])
-        with patch("backend.main.azure_table_service", None):
-            response = client.get("/options-chain", params=make_query_params(["AAPL"]))
+    def test_partial_tickers_still_return_200(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
+        response = client.get("/options-chain", params=make_query_params(["AAPL"]))
         assert response.status_code == 200
 
 
@@ -345,65 +295,50 @@ class TestPersistenceIntegration:
 # ---------------------------------------------------------------------------
 
 class TestResponseStructure:
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_response_is_json(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_response_is_json(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         response = client.get("/options-chain", params=make_query_params(["AAPL"]))
         assert response.headers["content-type"].startswith("application/json")
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_result_entry_has_ticker_field(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_rows_field_is_list(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         response = client.get("/options-chain", params=make_query_params(["AAPL"]))
         data = response.json()
-        assert "ticker" in data["results"]["AAPL"]
+        assert isinstance(data["rows"], list)
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_result_entry_has_calls_field(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_vix_field_is_present(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         response = client.get("/options-chain", params=make_query_params(["AAPL"]))
         data = response.json()
-        assert "calls" in data["results"]["AAPL"]
+        assert "vix" in data
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_result_entry_has_puts_field(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_row_has_strike_field(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         response = client.get("/options-chain", params=make_query_params(["AAPL"]))
         data = response.json()
-        assert "puts" in data["results"]["AAPL"]
+        assert "strike" in data["rows"][0]
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_tickers_field_is_list(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_row_has_expiry_field(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         response = client.get("/options-chain", params=make_query_params(["AAPL"]))
         data = response.json()
-        assert isinstance(data["tickers"], list)
+        assert "expiry" in data["rows"][0]
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_results_field_is_dict(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_row_has_type_field(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         response = client.get("/options-chain", params=make_query_params(["AAPL"]))
         data = response.json()
-        assert isinstance(data["results"], dict)
+        assert "type" in data["rows"][0]
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_calls_is_a_list(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_row_has_mid_field(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         response = client.get("/options-chain", params=make_query_params(["AAPL"]))
         data = response.json()
-        assert isinstance(data["results"]["AAPL"]["calls"], list)
+        assert "mid" in data["rows"][0]
 
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_puts_is_a_list(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
+    def test_top_level_keys_are_expected(self):
+        _mock_schwab_client.get_option_chain = AsyncMock(return_value=make_sample_chain("AAPL"))
         response = client.get("/options-chain", params=make_query_params(["AAPL"]))
         data = response.json()
-        assert isinstance(data["results"]["AAPL"]["puts"], list)
-
-    @patch("backend.services.polling_service.run_options_poll")
-    def test_top_level_keys_are_expected(self, mock_run):
-        mock_run.return_value = mock_agent_result(["AAPL"])
-        response = client.get("/options-chain", params=make_query_params(["AAPL"]))
-        data = response.json()
-        expected_keys = {"run_id", "tickers", "results"}
+        expected_keys = {"rows", "vix"}
         assert expected_keys.issubset(data.keys())

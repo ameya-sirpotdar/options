@@ -30,7 +30,7 @@ def test_metrics_agent_run_with_empty_state():
     agent = MetricsAgent()
     state = {}
     result = agent.run(state)
-    assert result == {}
+    assert result == {"metrics": None}
 
 
 def test_metrics_agent_run_with_complex_state():

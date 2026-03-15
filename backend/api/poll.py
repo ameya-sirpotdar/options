@@ -1,13 +1,8 @@
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from fastapi import APIRouter
 
 router = APIRouter()
-
-
-class PollOptionsRequest(BaseModel):
-    tickers: List[str]
 
 
 def _flatten_chain(ticker: str, chain: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -41,23 +36,3 @@ def _flatten_chain(ticker: str, chain: Dict[str, Any]) -> List[Dict[str, Any]]:
                         "inTheMoney": contract.get("inTheMoney"),
                     })
     return rows
-
-
-# NOTE: This endpoint is intentionally hidden from the public API docs.
-# It is used internally by the polling service and is not intended for
-# direct use by end users. Use POST /trades instead.
-@router.post("/poll/options", include_in_schema=False)
-async def post_poll_options(http_request: Request, body: PollOptionsRequest):
-    schwab_client = getattr(http_request.app.state, "schwab_client", None)
-    if schwab_client is None:
-        raise HTTPException(status_code=503, detail="Schwab client not available")
-
-    rows: List[Dict[str, Any]] = []
-    try:
-        for ticker in body.tickers:
-            chain = await schwab_client.get_option_chain(ticker)
-            rows.extend(_flatten_chain(ticker, chain))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-    return {"rows": rows}

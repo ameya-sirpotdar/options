@@ -88,16 +88,18 @@ describe('InputPanel', () => {
 
   it('disables both buttons when isPolling is true', async () => {
     await wrapper.setProps({ isPolling: true })
-    const buttons = wrapper.findAll('button')
-    buttons.forEach(button => {
+    const actionButtons = wrapper.findAll('.input-panel__btn')
+    expect(actionButtons.length).toBeGreaterThan(0)
+    actionButtons.forEach(button => {
       expect(button.attributes('disabled')).toBeDefined()
     })
   })
 
   it('disables both buttons when isCalculating is true', async () => {
     await wrapper.setProps({ isCalculating: true })
-    const buttons = wrapper.findAll('button')
-    buttons.forEach(button => {
+    const actionButtons = wrapper.findAll('.input-panel__btn')
+    expect(actionButtons.length).toBeGreaterThan(0)
+    actionButtons.forEach(button => {
       expect(button.attributes('disabled')).toBeDefined()
     })
   })

@@ -8,8 +8,8 @@ import BestTradeCard from '../BestTradeCard.vue'
  */
 const makeTrade = (overrides = {}) => ({
   symbol: 'AAPL',
-  strike_price: 150.0,
-  expiry_date: '2025-06-20',
+  strike: 150.0,
+  expiry: '2025-06-20',
   option_type: 'CALL',
   delta: 0.45,
   premium: 3.25,
@@ -47,12 +47,12 @@ describe('BestTradeCard', () => {
   })
 
   it('displays the strike price correctly', () => {
-    const wrapper = mount(BestTradeCard, { props: { trade: makeTrade({ strike_price: 200.0 }) } })
+    const wrapper = mount(BestTradeCard, { props: { trade: makeTrade({ strike: 200.0 }) } })
     expect(wrapper.find('[data-testid="trade-strike"]').text()).toContain('200')
   })
 
   it('displays the expiry date correctly', () => {
-    const wrapper = mount(BestTradeCard, { props: { trade: makeTrade({ expiry_date: '2025-09-19' }) } })
+    const wrapper = mount(BestTradeCard, { props: { trade: makeTrade({ expiry: '2025-09-19' }) } })
     expect(wrapper.find('[data-testid="trade-expiry"]').text()).toContain('2025-09-19')
   })
 
@@ -74,13 +74,13 @@ describe('BestTradeCard', () => {
 
   it('displays volume and open interest', () => {
     const wrapper = mount(BestTradeCard, { props: { trade: makeTrade({ volume: 1200, open_interest: 4500 }) } })
-    expect(wrapper.find('[data-testid="trade-volume"]').text()).toContain('1200')
-    expect(wrapper.find('[data-testid="trade-open-interest"]').text()).toContain('4500')
+    expect(wrapper.find('[data-testid="trade-volume"]').text()).toContain('1,200')
+    expect(wrapper.find('[data-testid="trade-open-interest"]').text()).toContain('4,500')
   })
 
   it('displays implied volatility', () => {
     const wrapper = mount(BestTradeCard, { props: { trade: makeTrade({ implied_volatility: 0.28 }) } })
-    expect(wrapper.find('[data-testid="trade-iv"]').text()).toContain('0.28')
+    expect(wrapper.find('[data-testid="trade-iv"]').text()).toContain('28.00%')
   })
 
   it('displays the option type', () => {

@@ -45,17 +45,16 @@
       </div>
 
       <div class="input-panel__field">
-        <label for="delta-input" class="input-panel__label">Delta</label>
+        <label for="delta-input" class="input-panel__label">Delta <span class="input-panel__delta-val">{{ localDelta != null ? Number(localDelta).toFixed(2) : '' }}</span></label>
         <div class="delta-input-wrap">
           <input
             id="delta-input"
             v-model.number="localDelta"
-            type="number"
-            min="0.01"
-            max="0.99"
+            type="range"
+            min="0.10"
+            max="0.50"
             step="0.01"
             class="input-panel__number"
-            placeholder="e.g. 0.30"
             @change="emitDelta"
           />
           <button

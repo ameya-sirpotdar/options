@@ -6,11 +6,11 @@ from fastapi import FastAPI
 from backend.api.routers.options_chain import router
 
 
-def make_app(mock_schwab_service=None):
+def make_app(mock_schwab_client=None):
     app = FastAPI()
     app.include_router(router)
-    if mock_schwab_service is not None:
-        app.state.schwab_service = mock_schwab_service
+    if mock_schwab_client is not None:
+        app.state.schwab_client = mock_schwab_client
     return app
 
 

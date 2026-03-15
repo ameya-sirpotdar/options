@@ -23,6 +23,12 @@ const makeTrade = (overrides = {}) => ({
   ...overrides,
 })
 
+/** Set expiry + tickers so canPoll is true. */
+function setReady(composable) {
+  composable.expiry.value = '2025-01-17'
+  composable.tickers.value = 'AAPL'
+}
+
 describe('useMarketData', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -32,145 +38,157 @@ describe('useMarketData', () => {
     vi.restoreAllMocks()
   })
 
-  it('initializes with empty trades, isLoading false, and no error', () => {
-    const { trades, isLoading, error } = useMarketData()
-    expect(trades.value).toEqual([])
-    expect(isLoading.value).toBe(false)
+  it('initializes with empty options, isPolling false, and no error', () => {
+    const { options, isPolling, error } = useMarketData()
+    expect(options.value).toEqual([])
+    expect(isPolling.value).toBe(false)
     expect(error.value).toBeNull()
   })
 
-  it('sets isLoading to true while fetching and false after', async () => {
+  it('sets isPolling to true while fetching and false after', async () => {
     let resolvePromise
     getTrades.mockReturnValue(new Promise((res) => { resolvePromise = res }))
 
-    const { fetchTrades, isLoading } = useMarketData()
-    const fetchCall = fetchTrades()
+    const comp = useMarketData()
+    setReady(comp)
+    const { fetchMarketData, isPolling } = comp
+    const fetchCall = fetchMarketData()
 
-    expect(isLoading.value).toBe(true)
+    expect(isPolling.value).toBe(true)
 
     resolvePromise([])
     await fetchCall
     await flushPromises()
 
-    expect(isLoading.value).toBe(false)
+    expect(isPolling.value).toBe(false)
   })
 
-  it('calls getTrades when fetchTrades is invoked', async () => {
+  it('calls getTrades when fetchMarketData is invoked', async () => {
     getTrades.mockResolvedValue([])
-    const { fetchTrades } = useMarketData()
-    await fetchTrades()
+    const comp = useMarketData()
+    setReady(comp)
+    await comp.fetchMarketData()
     expect(getTrades).toHaveBeenCalledTimes(1)
   })
 
-  it('updates trades with the flat list returned from GET /trades', async () => {
+  it('updates options with the flat list returned from GET /trades', async () => {
     const mockTrades = [makeTrade(), makeTrade({ symbol: 'TSLA', tradability_score: 90.0 })]
     getTrades.mockResolvedValue(mockTrades)
 
-    const { fetchTrades, trades } = useMarketData()
-    await fetchTrades()
+    const comp = useMarketData()
+    setReady(comp)
+    await comp.fetchMarketData()
     await flushPromises()
 
-    expect(trades.value).toEqual(mockTrades)
-    expect(trades.value).toHaveLength(2)
+    expect(comp.options.value).toEqual(mockTrades)
+    expect(comp.options.value).toHaveLength(2)
   })
 
   it('exposes tradability_score on each trade item', async () => {
     const mockTrades = [makeTrade({ tradability_score: 85.3 })]
     getTrades.mockResolvedValue(mockTrades)
 
-    const { fetchTrades, trades } = useMarketData()
-    await fetchTrades()
+    const comp = useMarketData()
+    setReady(comp)
+    await comp.fetchMarketData()
     await flushPromises()
 
-    expect(trades.value[0].tradability_score).toBe(85.3)
+    expect(comp.options.value[0].tradability_score).toBe(85.3)
   })
 
-  it('sets error and keeps trades empty when getTrades throws', async () => {
+  it('sets error and keeps options empty when getTrades throws', async () => {
     getTrades.mockRejectedValue(new Error('Network error'))
 
-    const { fetchTrades, trades, error } = useMarketData()
-    await fetchTrades()
+    const comp = useMarketData()
+    setReady(comp)
+    await comp.fetchMarketData()
     await flushPromises()
 
-    expect(error.value).toBeTruthy()
-    expect(trades.value).toEqual([])
+    expect(comp.error.value).toBeTruthy()
+    expect(comp.options.value).toEqual([])
   })
 
   it('clears previous error on a successful fetch', async () => {
     getTrades.mockRejectedValueOnce(new Error('Temporary failure'))
     getTrades.mockResolvedValueOnce([makeTrade()])
 
-    const { fetchTrades, error } = useMarketData()
+    const comp = useMarketData()
+    setReady(comp)
 
-    await fetchTrades()
+    await comp.fetchMarketData()
     await flushPromises()
-    expect(error.value).toBeTruthy()
+    expect(comp.error.value).toBeTruthy()
 
-    await fetchTrades()
+    await comp.fetchMarketData()
     await flushPromises()
-    expect(error.value).toBeNull()
+    expect(comp.error.value).toBeNull()
   })
 
-  it('clears previous trades on a failed fetch', async () => {
+  it('clears previous options on a failed fetch', async () => {
     getTrades.mockResolvedValueOnce([makeTrade()])
     getTrades.mockRejectedValueOnce(new Error('Failure'))
 
-    const { fetchTrades, trades } = useMarketData()
+    const comp = useMarketData()
+    setReady(comp)
 
-    await fetchTrades()
+    await comp.fetchMarketData()
     await flushPromises()
-    expect(trades.value).toHaveLength(1)
+    expect(comp.options.value).toHaveLength(1)
 
-    await fetchTrades()
+    await comp.fetchMarketData()
     await flushPromises()
-    expect(trades.value).toEqual([])
+    expect(comp.options.value).toEqual([])
   })
 
   it('handles getTrades returning an empty array gracefully', async () => {
     getTrades.mockResolvedValue([])
 
-    const { fetchTrades, trades, error } = useMarketData()
-    await fetchTrades()
+    const comp = useMarketData()
+    setReady(comp)
+    await comp.fetchMarketData()
     await flushPromises()
 
-    expect(trades.value).toEqual([])
-    expect(error.value).toBeNull()
+    expect(comp.options.value).toEqual([])
+    expect(comp.error.value).toBeNull()
   })
 
   it('handles getTrades returning null gracefully', async () => {
     getTrades.mockResolvedValue(null)
 
-    const { fetchTrades, trades, error } = useMarketData()
-    await fetchTrades()
+    const comp = useMarketData()
+    setReady(comp)
+    await comp.fetchMarketData()
     await flushPromises()
 
-    expect(trades.value).toEqual([])
-    expect(error.value).toBeNull()
+    expect(comp.options.value).toEqual([])
+    expect(comp.error.value).toBeNull()
   })
 
-  it('sets isLoading to false even when getTrades throws', async () => {
+  it('sets isPolling to false even when getTrades throws', async () => {
     getTrades.mockRejectedValue(new Error('Crash'))
 
-    const { fetchTrades, isLoading } = useMarketData()
-    await fetchTrades()
+    const comp = useMarketData()
+    setReady(comp)
+    await comp.fetchMarketData()
     await flushPromises()
 
-    expect(isLoading.value).toBe(false)
+    expect(comp.isPolling.value).toBe(false)
   })
 
-  it('supports multiple sequential fetchTrades calls independently', async () => {
+  it('supports multiple sequential fetchMarketData calls independently', async () => {
     const firstBatch = [makeTrade({ symbol: 'AAPL' })]
     const secondBatch = [makeTrade({ symbol: 'TSLA' }), makeTrade({ symbol: 'NVDA' })]
     getTrades.mockResolvedValueOnce(firstBatch).mockResolvedValueOnce(secondBatch)
 
-    const { fetchTrades, trades } = useMarketData()
+    const comp = useMarketData()
+    setReady(comp)
 
-    await fetchTrades()
+    await comp.fetchMarketData()
     await flushPromises()
-    expect(trades.value).toEqual(firstBatch)
+    expect(comp.options.value).toEqual(firstBatch)
 
-    await fetchTrades()
+    await comp.fetchMarketData()
     await flushPromises()
-    expect(trades.value).toEqual(secondBatch)
+    expect(comp.options.value).toEqual(secondBatch)
   })
 })
