@@ -1,6 +1,5 @@
 """Tests that /health is responsive even when AzureTableService init is slow."""
 import time
-from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -48,7 +47,7 @@ async def test_health_returns_ok_without_azure():
 
 @pytest.mark.asyncio
 async def test_azure_table_service_init_uses_thread():
-    """Verify the lifespan startup calls asyncio.to_thread for AzureTableService construction."""
+    """Verify startup uses asyncio.to_thread for AzureTableService construction."""
     import asyncio
     import backend.main as main_module
 
@@ -62,20 +61,22 @@ async def test_azure_table_service_init_uses_thread():
 
     mock_azure_cls = MagicMock(return_value=mock_instance)
 
+    # Support both startup_event function and lifespan context manager patterns.
+    startup_fn = getattr(main_module, "startup_event", None)
+
     with patch.object(main_module, "AzureTableService", mock_azure_cls):
         with patch.dict("os.environ", {"AZURE_STORAGE_CONNECTION_STRING": "fake"}):
             with patch.object(main_module, "asyncio") as mock_asyncio:
                 mock_asyncio.to_thread = recording_to_thread
-                # Drive the lifespan context manager through its startup phase
-                if hasattr(main_module, "startup_event"):
-                    await main_module.startup_event()
+                if startup_fn is not None:
+                    await startup_fn()
                 else:
-                    # lifespan-based startup: run the async generator up to the yield
-                    gen = main_module.lifespan(main_module.app)
-                    try:
-                        await gen.__anext__()
-                    except StopAsyncIteration:
-                        pass
+                    # Lifespan pattern: exercise startup via ASGI lifespan events.
+                    async with AsyncClient(
+                        transport=ASGITransport(app=main_module.app),
+                        base_url="http://test",
+                    ) as client:
+                        await client.get("/health")
 
     assert any(c is mock_azure_cls for c in calls), (
         "asyncio.to_thread was not called with AzureTableService — blocking init detected"
