@@ -1,6 +1,3 @@
-tests/services/test_schwab_service.py
-
-```python
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from backend.services.schwab_service import SchwabService
@@ -293,4 +290,3 @@ class TestSchwabServiceIntegration:
         service2 = SchwabService()
         assert service1 is not service2
         assert type(service1) == type(service2)
-```
