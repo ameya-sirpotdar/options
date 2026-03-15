@@ -47,7 +47,7 @@ async def test_health_returns_ok_without_azure():
 
 @pytest.mark.asyncio
 async def test_azure_table_service_init_uses_thread():
-    """Verify startup uses asyncio.to_thread for AzureTableService construction."""
+    """Verify startup_event calls asyncio.to_thread for AzureTableService construction."""
     import asyncio
     import backend.main as main_module
 
@@ -61,23 +61,39 @@ async def test_azure_table_service_init_uses_thread():
 
     mock_azure_cls = MagicMock(return_value=mock_instance)
 
-    # Support both startup_event function and lifespan context manager patterns.
-    startup_fn = getattr(main_module, "startup_event", None)
-
     with patch.object(main_module, "AzureTableService", mock_azure_cls):
         with patch.dict("os.environ", {"AZURE_STORAGE_CONNECTION_STRING": "fake"}):
             with patch.object(main_module, "asyncio") as mock_asyncio:
                 mock_asyncio.to_thread = recording_to_thread
-                if startup_fn is not None:
-                    await startup_fn()
-                else:
-                    # Lifespan pattern: exercise startup via ASGI lifespan events.
-                    async with AsyncClient(
-                        transport=ASGITransport(app=main_module.app),
-                        base_url="http://test",
-                    ) as client:
-                        await client.get("/health")
+                await main_module.startup_event()
 
     assert any(c is mock_azure_cls for c in calls), (
         "asyncio.to_thread was not called with AzureTableService — blocking init detected"
+    )
+
+
+@pytest.mark.asyncio
+async def test_trades_endpoint_accessible():
+    """GET /trades is reachable and returns a valid response shape after refactor."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/trades")
+
+    # Endpoint must exist (not 404) — 200 or 422 (missing params) are both acceptable
+    assert response.status_code in (200, 422), (
+        f"Unexpected status {response.status_code} — /trades endpoint may be missing"
+    )
+
+
+@pytest.mark.asyncio
+async def test_poll_options_endpoint_not_publicly_exposed():
+    """/poll/options should not be publicly routed after the API redesign."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/poll/options")
+
+    assert response.status_code == 404, (
+        "/poll/options is still publicly exposed — it should be hidden after refactor"
     )
