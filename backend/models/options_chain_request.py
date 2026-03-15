@@ -1,8 +1,10 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 
 
 class OptionsChainRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     symbol: str = Field(..., description="The ticker symbol for the underlying asset")
     contract_type: Optional[str] = Field(
         default="ALL",
