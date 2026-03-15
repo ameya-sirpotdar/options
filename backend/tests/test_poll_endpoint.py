@@ -1,33 +1,41 @@
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 from fastapi import FastAPI
 
+from backend.api.poll import router
 
-class TestPollOptionsEndpointRemoved:
-    """
-    The /poll/options endpoint has been removed from the public API as part of
-    the RESTful API redesign (issue #88). These tests verify that the endpoint
-    is no longer accessible.
-    """
 
-    def test_poll_options_endpoint_not_registered(self):
-        """
-        Verify that /poll/options is not registered on a plain FastAPI app
-        (i.e. the poll router no longer exposes this route publicly).
-        """
-        app = FastAPI()
-        client = TestClient(app, raise_server_exceptions=False)
+def make_app(mock_schwab_client=None):
+    app = FastAPI()
+    app.include_router(router)
+
+    if mock_schwab_client is not None:
+        app.state.schwab_client = mock_schwab_client
+
+    return app
+
+
+class TestPollOptionsEndpoint:
+    """POST /poll/options is an internal endpoint and must not be publicly accessible."""
+
+    def test_post_poll_options_not_found(self):
+        """POST /poll/options is hidden from the public API and must return 404."""
+        mock_client = MagicMock()
+        mock_client.get_option_chain = AsyncMock(return_value={})
+
+        app = make_app(mock_schwab_client=mock_client)
+        client = TestClient(app)
 
         response = client.post("/poll/options", json={"tickers": ["AAPL"]})
 
         assert response.status_code == 404
 
-    def test_poll_options_get_not_registered(self):
-        """
-        Verify that GET /poll/options is also not accessible.
-        """
-        app = FastAPI()
-        client = TestClient(app, raise_server_exceptions=False)
+    def test_get_poll_options_not_found(self):
+        """GET /poll/options is hidden from the public API and must return 404."""
+        mock_client = MagicMock()
+        app = make_app(mock_schwab_client=mock_client)
+        client = TestClient(app)
 
         response = client.get("/poll/options")
 
