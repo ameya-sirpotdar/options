@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from backend.agents.workflow import run_options_poll
+from backend.agents.options_agent import run_options_poll
 from backend.models.options_contract import OptionsContractRecord
 from backend.models.run_log import RunLogRecord
 
