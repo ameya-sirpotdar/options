@@ -1,3 +1,4 @@
+backend/models/options_chain_response.py
 from pydantic import BaseModel
 from typing import Optional, List
 from backend.models.options_contract import OptionsContract
@@ -5,7 +6,6 @@ from backend.models.options_contract import OptionsContract
 
 class OptionsChainResponse(BaseModel):
     symbol: str
-    status: Optional[str] = None
+    status: str
     contracts: List[OptionsContract] = []
-    underlying_price: Optional[float] = None
     error: Optional[str] = None
